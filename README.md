@@ -56,9 +56,11 @@ The full commented example is in [`examples/livekit-restaurant/`](examples/livek
 Already have a prompt per agent? Let your coding agent do the conversion. sopkit ships a skill for it:
 
 ```
-uv tool install 'sopkit[server] @ git+https://github.com/amanmibra/sopkit'
+curl -fsSL https://raw.githubusercontent.com/amanmibra/sopkit/main/install.sh | sh
 sopkit skills install                    # writes .claude/skills/sopkit-import/SKILL.md
 ```
+
+The installer sets up [uv](https://docs.astral.sh/uv/) if you don't have it. With uv already installed, this is the same as `uv tool install 'sopkit[server] @ git+https://github.com/amanmibra/sopkit'`.
 
 Then, in Claude Code:
 
@@ -82,7 +84,8 @@ The agent repeats Build and Verify until nothing is lost, then reports the confl
 ## Use
 
 ```
-uv tool install 'sopkit[server] @ git+https://github.com/amanmibra/sopkit'
+curl -fsSL https://raw.githubusercontent.com/amanmibra/sopkit/main/install.sh | sh
+# or: uv tool install 'sopkit[server] @ git+https://github.com/amanmibra/sopkit'
 # or: pip install 'sopkit[server] @ git+https://github.com/amanmibra/sopkit'
 
 sopkit validate sops/                  # check the files

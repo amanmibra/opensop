@@ -14,7 +14,7 @@ Work in this order. Don't skip the verification steps.
 Run `sopkit --help`. If it's missing, install it:
 
 ```
-uv tool install 'sopkit @ git+https://github.com/amanmibra/sopkit'
+curl -fsSL https://raw.githubusercontent.com/amanmibra/sopkit/main/install.sh | sh
 ```
 
 Then run `sopkit guide` and read the whole format reference before writing any file.
