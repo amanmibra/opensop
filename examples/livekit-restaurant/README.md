@@ -18,6 +18,7 @@ livekit-restaurant/
   src/
     main.ts                        the LiveKit agent; one codebase, deployed once per restaurant
     instructions.ts                loads this agent's prompt from sops/build/
+    tools.ts                       mock versions of the tools the SOPs name (lookup_allergens, transfer_to_staff, ...)
   sops/                            the instructions, in sopkit format
     sopkit.yaml                    defaults for every agent (e.g. who to transfer to)
     bases/                         prompt text that isn't a procedure
@@ -118,6 +119,8 @@ agent: voice.Agent.create({ instructions: instructions.text }),
 ```
 
 `loadInstructions` looks up `livekit:<agentName>` in `build/lock.json`, reads the matching prompt file, and returns its hash. The agent logs the hash at startup (`sopkit: sakura-sushi prompt 54fd93445bb6`), so you can always tell which version a deployment is running.
+
+The SOPs name tools (`lookup_allergens`, `transfer_to_staff`, ...), so the agent registers tools with those exact names; `src/tools.ts` has mock versions that return canned answers. `build/lock.json` lists every tool each agent's prompt mentions. If the prompt names a tool the agent doesn't register, the model has nothing to call and may say the call out loud as text.
 
 The prompt is read from disk. There's no server and no network call, so it can't fail at call time. LiveKit has no API for changing an agent's instructions remotely, so shipping the prompt with the code is the simplest way to get it there.
 

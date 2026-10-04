@@ -2,6 +2,7 @@ import { type JobContext, ServerOptions, cli, defineAgent, inference, voice } fr
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { loadInstructions } from './instructions.js';
+import { mockTools } from './tools.js';
 
 dotenv.config({ path: '.env.local' });
 
@@ -25,7 +26,8 @@ export default defineAgent({
     });
 
     await session.start({
-      agent: voice.Agent.create({ instructions: instructions.text }),
+      // The SOPs tell the agent to use these tools by name, so the agent must register them.
+      agent: voice.Agent.create({ instructions: instructions.text, tools: mockTools }),
       room: ctx.room,
     });
     await ctx.connect();

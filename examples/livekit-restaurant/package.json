@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@livekit/agents": "^1.0.0",
-    "dotenv": "^16.4.0"
+    "dotenv": "^16.4.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
