@@ -88,6 +88,10 @@ Finish with `sopkit validate sops` and `sopkit plan sops --against main`.
 
 Early. Working: the format, rendering, validation, `plan`, the CLI, and the HTTP API with a file-based store. Next: a GitHub App (plans as PR checks, publish on merge), a TUI for importing existing prompts and composing agents, and suggestions from conflicts and real calls. See [ROADMAP.md](ROADMAP.md).
 
+## Contributing
+
+See [CONTRIBUTORS.md](CONTRIBUTORS.md). Contributions welcome; open an issue first for anything big.
+
 ## License
 
 [Apache-2.0](LICENSE)
