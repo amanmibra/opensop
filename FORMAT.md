@@ -172,6 +172,7 @@ Set exactly one platform field. Elsewhere in sopkit, refer to the agent by its i
 | Text one agent gets | That agent's `instructions`. |
 | The same sentence with a different value per agent | A placeholder in the shared block, with each agent's value in `variables`. |
 | One agent skips a shared SOP | Add the SOP id to that agent's `exclude`. |
+| One agent needs a different version of a locked block (e.g. a Spanish brand voice) | In the locked block, `exclude: [that-agent]`. Add a second block with `agents: [that-agent]`, locked too. Agents can't exclude locked blocks themselves; the exception lives in the block. |
 | Something said at the end of every call | A base with `agents: "*"` and `position: bottom`. |
 | A procedure only some agents follow | An SOP with `agents: [ids]`. |
 

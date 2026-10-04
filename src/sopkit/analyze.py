@@ -290,7 +290,7 @@ def _conflict(a: str, b: str) -> str | None:
     na, nb = norm(a), norm(b)
     if na == nb:
         return "duplicate_text"
-    if _NUMBER.sub("#", na) == _NUMBER.sub("#", nb):
+    if _numbers_differ_in_same_sentence(na, nb):
         return "numeric_conflict"
     wa, wb = words(a), words(b)
     neg_a, neg_b = bool(_NEGATIONS & set(wa)), bool(_NEGATIONS & set(wb))
@@ -301,6 +301,19 @@ def _conflict(a: str, b: str) -> str | None:
     if similarity(a, b) >= 0.85:
         return "near_duplicate"
     return None
+
+
+def _numbers_differ_in_same_sentence(na: str, nb: str) -> bool:
+    """Same statement with a different number: identical once numbers are masked, one contained
+    in the other ("delivery until #pm" inside "takeout and delivery until #pm"), or nearly identical."""
+    nums_a, nums_b = _NUMBER.findall(na), _NUMBER.findall(nb)
+    if not nums_a or not nums_b or nums_a == nums_b:
+        return False
+    ma, mb = _NUMBER.sub("#", na), _NUMBER.sub("#", nb)
+    short, long = sorted((ma, mb), key=len)
+    if ma == mb or (len(short.split()) >= 3 and f" {short} " in f" {long} "):
+        return True
+    return SequenceMatcher(None, ma.split(), mb.split(), autojunk=False).ratio() >= 0.8
 
 
 def _agent_units(ws: Workspace, agent: Agent, raw: bool = False) -> list[tuple[str, str]]:

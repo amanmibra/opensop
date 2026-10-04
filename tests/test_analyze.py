@@ -114,3 +114,11 @@ def test_skills_install_copies_the_import_skill(tmp_path, capsys):
     assert skill.startswith("---\nname: sopkit-import\n")
     for command in ("sopkit overlap", "sopkit compare", "sopkit check", "sopkit guide"):
         assert command in skill
+
+
+def test_check_finds_a_number_conflict_inside_a_longer_sentence(repo):
+    edit(repo / "agents" / "tonys-pizza.yaml", "Pickup only after 10pm. Cash and card.", "Pickup and delivery until 11pm. Delivery until 10pm on Sundays. Cash and card.")
+    assert [f.code for f in analyze.check(sopkit.load_workspace(repo))] == []  # different statements: no conflict
+    edit(repo / "agents" / "tonys-pizza.yaml", "Delivery until 10pm on Sundays.", "Delivery until 10pm.")
+    [finding] = analyze.check(sopkit.load_workspace(repo))
+    assert finding.code == "numeric_conflict"

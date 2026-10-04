@@ -1,6 +1,48 @@
 {
   "version": 1,
   "agents": {
+    "la-casita": {
+      "platform_ref": "livekit:la-casita",
+      "hash": "3980d80ac619bfc4407150bbf8fe66579f7fdf5312c18a48c42c0c3c3a23be4c",
+      "blocks": [
+        {
+          "kind": "agent",
+          "id": "la-casita",
+          "hash": "2cad4f2d1d839356be232f8f466b3e3e9c0326a27e4ca6eb3f785c3a1ccac3e3"
+        },
+        {
+          "kind": "base",
+          "id": "restaurant-host",
+          "hash": "cfa0fc804ad2f51283d7f56b298cbd08b1d8d5a21cdeb345b447effaa5de674b"
+        },
+        {
+          "kind": "base",
+          "id": "brand-voice-es",
+          "hash": "907e1e8d071b6fdaa66714f6fdb52ff735bc2d60470eadade0ab80da056f98bd"
+        },
+        {
+          "kind": "base",
+          "id": "closing",
+          "hash": "fa029caddb594caba1cdd83e4f93ee2b4bcc3d931fb43fe5950696041ee8ab9c"
+        },
+        {
+          "kind": "sop",
+          "id": "allergen-check",
+          "hash": "64a6f2aa8ddce555b89ab21d644078215df9dba330f6e27077e22fc3a4e2afd3"
+        },
+        {
+          "kind": "sop",
+          "id": "delivery-handling",
+          "hash": "010a06b32f7c6dffc6c2817b2470182e59783cfa32a44243069e42ba50ed7f8a"
+        }
+      ],
+      "tools": [
+        "check_delivery_zone",
+        "lookup_allergens",
+        "place_order",
+        "transfer_to_staff"
+      ]
+    },
     "luigis-trattoria": {
       "platform_ref": "livekit:luigis-trattoria",
       "hash": "1f4dc387bbbcc6131768c8531b79d6e34a1c85a507acf60a47d3575f0a35cb4e",
@@ -18,7 +60,7 @@
         {
           "kind": "base",
           "id": "brand-voice",
-          "hash": "b4f23bc3a75f4be2f6d4e8de73767b593856b12a3cd7532dff21217bf848e978"
+          "hash": "0ae565c20fc0da0bc07e3c66bbbb04e3fe550e09362fa993447f8bcc593d70f7"
         },
         {
           "kind": "base",
@@ -66,7 +108,7 @@
         {
           "kind": "base",
           "id": "brand-voice",
-          "hash": "b4f23bc3a75f4be2f6d4e8de73767b593856b12a3cd7532dff21217bf848e978"
+          "hash": "0ae565c20fc0da0bc07e3c66bbbb04e3fe550e09362fa993447f8bcc593d70f7"
         },
         {
           "kind": "base",
@@ -113,7 +155,7 @@
         {
           "kind": "base",
           "id": "brand-voice",
-          "hash": "b4f23bc3a75f4be2f6d4e8de73767b593856b12a3cd7532dff21217bf848e978"
+          "hash": "0ae565c20fc0da0bc07e3c66bbbb04e3fe550e09362fa993447f8bcc593d70f7"
         },
         {
           "kind": "base",
