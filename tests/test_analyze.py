@@ -110,12 +110,25 @@ def test_check_reports_a_shared_conflict_once_for_all_agents(repo):
 # --- skills -----------------------------------------------------------------------
 
 
-def test_skills_install_copies_the_import_skill(tmp_path, capsys):
-    assert main(["skills", "install", "--dir", str(tmp_path / ".claude" / "skills")]) == 0
-    skill = (tmp_path / ".claude" / "skills" / "opensop-import" / "SKILL.md").read_text()
-    assert skill.startswith("---\nname: opensop-import\n")
-    for command in ("opensop overlap", "opensop compare", "opensop check", "opensop guide"):
-        assert command in skill
+def test_skills_install_covers_claude_code_codex_and_opencode(tmp_path, capsys, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert main(["skills", "install"]) == 0
+    for folder in (".claude/skills", ".agents/skills"):
+        skill = (tmp_path / folder / "opensop-import" / "SKILL.md").read_text()
+        assert skill.startswith("---\nname: opensop-import\n")
+        for command in ("opensop overlap", "opensop compare", "opensop check", "opensop guide"):
+            assert command in skill
+    out = capsys.readouterr().out
+    assert "/opensop-import" in out and "$opensop-import" in out and "OpenCode" in out
+
+
+def test_skills_install_for_one_agent(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert main(["skills", "install", "--agent", "codex"]) == 0
+    assert (tmp_path / ".agents/skills/opensop-import/SKILL.md").exists()
+    assert not (tmp_path / ".claude").exists()
+    assert main(["skills", "install", "--dir", "custom"]) == 0
+    assert (tmp_path / "custom/opensop-import/SKILL.md").exists()
 
 
 def test_check_finds_a_number_conflict_inside_a_longer_sentence(repo):

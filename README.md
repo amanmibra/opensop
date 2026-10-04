@@ -34,10 +34,18 @@ Installs [uv](https://docs.astral.sh/uv/) if needed. Already have uv? `uv tool i
 **2. Import your existing prompts** with your coding agent
 
 ```sh
-opensop skills install        # adds .claude/skills/opensop-import
+opensop skills install        # adds the opensop-import skill for Claude Code, Codex and OpenCode
 ```
 
-Then run `/opensop-import` in Claude Code. The agent turns your prompts into OpenSOP files, checks that nothing was lost, and asks you to approve a one-screen plan before it writes anything.
+Then run it in your coding agent:
+
+| Agent | Run |
+|---|---|
+| Claude Code | `/opensop-import` |
+| Codex | `$opensop-import` (or pick it from `/skills`) |
+| OpenCode | ask it to "use the opensop-import skill" |
+
+The agent turns your prompts into OpenSOP files, checks that nothing was lost, and asks you to approve a one-screen plan before it writes anything.
 
 <details>
 <summary>What the import does, step by step</summary>
@@ -52,7 +60,7 @@ Then run `/opensop-import` in Claude Code. The agent turns your prompts into Ope
 | Review | `opensop check` | Flags duplicates and conflicts (10pm vs 11pm, "always X" vs "never X") for you to decide |
 | Commit | you | Approve a one-screen summary before anything is committed |
 
-Codex, Cursor and others: `opensop skills install --dir <their skills folder>`, or ask the agent to follow `.claude/skills/opensop-import/SKILL.md`.
+The skill is installed to `.claude/skills/` (Claude Code, OpenCode) and `.agents/skills/` (Codex, OpenCode). Use `--agent claude|codex|opencode` for just one. For other agents, `--dir <their skills folder>`, or ask the agent to follow `.agents/skills/opensop-import/SKILL.md`.
 
 </details>
 
@@ -100,7 +108,7 @@ $ opensop plan sops --against main
 | `opensop check sops` | Duplicated text and conflicting instructions |
 | `opensop overlap <dir>` | What a set of existing prompts have in common |
 | `opensop compare sops --originals <dir>` | Confirm built prompts still say everything the originals did |
-| `opensop skills install` | Install the `/opensop-import` skill |
+| `opensop skills install` | Install the import skill for Claude Code, Codex and OpenCode |
 | `opensop guide` | Print the format reference |
 
 ## Serving prompts
@@ -109,7 +117,7 @@ OpenSOP builds prompts into `sops/build/`, and the simplest setup ships them wit
 
 ## Working with coding agents
 
-[FORMAT.md](FORMAT.md) is the full reference, written for people and agents. Add this to your project's `AGENTS.md` or `CLAUDE.md`:
+[FORMAT.md](FORMAT.md) is the full reference, written for people and agents. Add this to your project's `AGENTS.md` (Codex, OpenCode) or `CLAUDE.md` (Claude Code):
 
 ```markdown
 Agent instructions live in `sops/` in the opensop format.

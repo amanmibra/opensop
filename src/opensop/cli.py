@@ -6,7 +6,7 @@
     opensop overlap  DIR                         what several original prompts share
     opensop compare  [ROOT] --originals DIR      does each rendered prompt still say everything?
     opensop check    [ROOT] [--json]             duplicates and mechanical conflicts
-    opensop skills install [--dir DIR]
+    opensop skills install [--agent claude|codex|opencode] [--dir DIR]
     opensop guide
 """
 
@@ -63,7 +63,13 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("skills", help="install the opensop skills for coding agents")
     p.add_argument("action", choices=["install"])
-    p.add_argument("--dir", default=".claude/skills", help="where to install (default: .claude/skills)")
+    p.add_argument(
+        "--agent",
+        action="append",
+        choices=sorted(SKILL_DIRS),
+        help="install for this coding agent only (repeatable). Default: Claude Code, Codex and OpenCode",
+    )
+    p.add_argument("--dir", help="install into this folder instead")
 
     sub.add_parser("guide", help="print the format reference (FORMAT.md)")
 
@@ -148,13 +154,30 @@ def _check(args) -> int:
     return 0
 
 
+# Where each coding agent looks for project skills. Codex and OpenCode both read .agents/skills;
+# OpenCode also reads .claude/skills, so the default (both folders) covers all three.
+SKILL_DIRS = {"claude": ".claude/skills", "codex": ".agents/skills", "opencode": ".agents/skills"}
+HOW_TO_RUN = {
+    ".claude/skills": "Claude Code: /opensop-import",
+    ".agents/skills": "Codex: $opensop-import   OpenCode: ask it to use the opensop-import skill",
+}
+
+
 def _skills(args) -> int:
     source = _resource_dir("skills")
-    dest = Path(args.dir)
-    for skill in sorted(p for p in source.iterdir() if p.is_dir()):
-        target = dest / skill.name
-        shutil.copytree(skill, target, dirs_exist_ok=True)
-        print(f"installed {target}/SKILL.md")
+    if args.dir:
+        dests = [args.dir]
+    else:
+        dests = sorted({SKILL_DIRS[a] for a in (args.agent or SKILL_DIRS)})
+    for dest in dests:
+        for skill in sorted(p for p in source.iterdir() if p.is_dir()):
+            target = Path(dest) / skill.name
+            shutil.copytree(skill, target, dirs_exist_ok=True)
+            print(f"installed {target}/SKILL.md")
+    print()
+    for dest in dests:
+        if dest in HOW_TO_RUN:
+            print(HOW_TO_RUN[dest])
     return 0
 
 

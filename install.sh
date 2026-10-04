@@ -50,4 +50,4 @@ else
   say "run 'uv tool update-shell' (or add $BIN_DIR to PATH) and open a new terminal."
 fi
 
-say "next: 'opensop skills install', then run /opensop-import in your coding agent"
+say "next: 'opensop skills install' in your repo, then run the opensop-import skill in Claude Code, Codex or OpenCode"

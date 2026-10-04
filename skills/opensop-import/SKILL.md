@@ -1,6 +1,6 @@
 ---
 name: opensop-import
-description: Convert existing voice/task agent prompts into OpenSOP files (shared bases, SOPs, one file per agent), verify nothing was lost, and report conflicts. Asks the user to fill gaps and approve a short import plan before writing files, and again before committing. Use when the user asks to import, migrate, modularize or "opensop-ify" agent prompts or instructions, or runs /opensop-import.
+description: Convert existing voice/task agent prompts into OpenSOP files (shared bases, SOPs, one file per agent), verify nothing was lost, and report conflicts. Asks the user to fill gaps and approve a short import plan before writing files, and again before committing. Use when the user asks to import, migrate, modularize or "opensop-ify" agent prompts or instructions, or invokes this skill (/opensop-import in Claude Code, $opensop-import in Codex).
 ---
 
 # Import existing prompts into OpenSOP
