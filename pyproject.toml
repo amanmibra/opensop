@@ -1,6 +1,6 @@
 [project]
 name = "sopkit"
-version = "0.1.0"
+version = "0.0.1"
 description = "Modular, git-versioned instructions for task-driven agents."
 readme = "README.md"
 license = "Apache-2.0"
