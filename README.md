@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🧩 OpenSOP
+# 📋🧩 OpenSOP
 
 **Modular, git-versioned instructions for task-driven agents.**
 

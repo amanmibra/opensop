@@ -1,4 +1,4 @@
-# 🧩 Example: LiveKit restaurant agents
+# 📋🧩 Example: LiveKit restaurant agents
 
 A small company runs phone agents for four restaurants on LiveKit, one agent per restaurant:
 
