@@ -34,7 +34,7 @@ class GitError(Exception):
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="opensop", description="Modular, git-versioned instructions for task-driven agents.")
+    parser = argparse.ArgumentParser(prog="opensop", description="Modular, git-versioned instructions for teams managing multiple task-driven agents.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("validate", help="check the files and print problems")

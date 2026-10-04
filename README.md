@@ -2,7 +2,7 @@
 
 # 📋🧩 OpenSOP
 
-**Modular, git-versioned instructions for task-driven agents.**
+**Modular, git-versioned instructions for teams managing multiple task-driven agents.**
 
 Write shared instructions and SOPs once. OpenSOP builds each agent's full prompt<br>
 and shows exactly which agents a change touches.

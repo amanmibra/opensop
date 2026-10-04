@@ -1,7 +1,7 @@
 [project]
 name = "opensop"
 version = "0.0.1"
-description = "Modular, git-versioned instructions for task-driven agents."
+description = "Modular, git-versioned instructions for teams managing multiple task-driven agents."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
