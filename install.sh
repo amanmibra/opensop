@@ -6,13 +6,11 @@
 # Installs uv (https://docs.astral.sh/uv/) first if it's missing, then installs sopkit as a uv tool.
 # Options (environment variables):
 #   SOPKIT_REF=<branch|tag|commit>   install a specific version (default: main)
-#   SOPKIT_EXTRAS=""                 skip the HTTP server dependencies (default: server)
 
 set -eu
 
 REPO="https://github.com/amanmibra/sopkit"
 REF="${SOPKIT_REF:-main}"
-EXTRAS="${SOPKIT_EXTRAS-server}"
 
 FRESH_UV=""
 
@@ -36,11 +34,7 @@ if ! command -v uv >/dev/null 2>&1; then
   command -v uv >/dev/null 2>&1 || fail "uv installed but not on PATH; open a new terminal and rerun"
 fi
 
-if [ -n "$EXTRAS" ]; then
-  SPEC="sopkit[$EXTRAS] @ git+$REPO@$REF"
-else
-  SPEC="sopkit @ git+$REPO@$REF"
-fi
+SPEC="sopkit @ git+$REPO@$REF"
 
 say "installing $SPEC"
 uv tool install --force --quiet "$SPEC"

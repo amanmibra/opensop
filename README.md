@@ -27,7 +27,7 @@ sopkit keeps the shared parts in one place, in git, and builds every agent's pro
 curl -fsSL https://raw.githubusercontent.com/amanmibra/sopkit/main/install.sh | sh
 ```
 
-Installs [uv](https://docs.astral.sh/uv/) if needed. Already have uv? `uv tool install 'sopkit[server] @ git+https://github.com/amanmibra/sopkit'`
+Installs [uv](https://docs.astral.sh/uv/) if needed. Already have uv? `uv tool install 'sopkit @ git+https://github.com/amanmibra/sopkit'`
 
 **2. Import your existing prompts** with your coding agent
 
@@ -100,18 +100,10 @@ $ sopkit plan sops --against main
 | `sopkit compare sops --originals <dir>` | Confirm built prompts still say everything the originals did |
 | `sopkit skills install` | Install the `/sopkit-import` skill |
 | `sopkit guide` | Print the format reference |
-| `sopkit serve` | Run the HTTP API (see below) |
 
 ## Serving prompts
 
-Instead of shipping prompts with your code, agents can fetch them when a call starts:
-
-```http
-GET /v1/workspaces/<workspace>/agents/<agent>/prompt
-Authorization: Bearer <token>
-```
-
-Run it with `SOPKIT_TOKEN=... sopkit serve` (OpenAPI at `/openapi.json`). Every response carries `X-Sopkit-Hash`, and the server logs which version each agent got, so any call can be traced to the exact prompt it ran with.
+sopkit builds prompts into `sops/build/`, and the simplest setup ships them with your agent's code. To have agents fetch their prompt when a call starts instead (so a merge goes live without a redeploy), use **sopserve**, the companion server, which is in its own repo and still early.
 
 ## Working with coding agents
 
@@ -127,7 +119,7 @@ For editor autocomplete, point `yaml-language-server` at the schemas in [`spec/`
 
 ## Status
 
-Early, and moving fast. See the [roadmap](ROADMAP.md): next up are a TypeScript client, a GitHub App (plans on PRs, publish on merge), and suggestions from real calls.
+Early, and moving fast. See the [roadmap](ROADMAP.md): next up are more checks and suggestions from real calls. Serving, the GitHub App and the TypeScript client are part of sopserve.
 
 ## Contributing
 

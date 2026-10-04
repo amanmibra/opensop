@@ -11,14 +11,11 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
-[project.optional-dependencies]
-server = ["fastapi>=0.115", "uvicorn>=0.30"]
-
 [project.scripts]
 sopkit = "sopkit.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8", "httpx2", "sopkit[server]"]
+dev = ["pytest>=8"]
 
 [build-system]
 requires = ["hatchling"]
