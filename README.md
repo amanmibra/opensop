@@ -79,7 +79,7 @@ The agent copies each existing prompt into `sops/originals/`, and the CLI does t
 | Verify | `sopkit compare sops --originals sops/originals` | Fails if any sentence from an original is missing or changed in the rebuilt prompt, and shows the changed words |
 | Review | `sopkit check sops` | Duplicated text, the same sentence with different numbers, "always X" vs "never X", unused variables |
 
-The agent repeats Build and Verify until nothing is lost, then reports the conflicts for you to decide. It doesn't resolve them on its own.
+Along the way the agent asks you to fill gaps (missing platform ids, goals it can't find, which values are right where prompts drifted), and stops twice for a quick approval: a one-screen import plan before it writes any file, and a one-screen summary before it commits. It repeats Build and Verify until nothing is lost, and reports conflicts for you to decide instead of resolving them on its own.
 
 ## Use
 
