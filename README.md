@@ -4,8 +4,10 @@
 
 **Modular, git-versioned instructions for task-driven agents.**
 
-Write shared prompt text and SOPs once. sopkit assembles every agent's full prompt,<br>
-shows which agents a change touches, and serves the result to LiveKit, Vapi and ElevenLabs.
+Write shared instructions and SOPs once. sopkit builds each agent's full prompt<br>
+and shows exactly which agents a change touches.
+
+[Quickstart](#quickstart) · [How it works](#how-it-works) · [Commands](#commands) · [Format](FORMAT.md) · [Example](examples/livekit-restaurant)
 
 </div>
 
@@ -13,31 +15,68 @@ shows which agents a change touches, and serves the result to LiveKit, Vapi and 
 
 ## Why
 
-Teams running one voice agent per customer end up maintaining dozens of near-identical prompts by hand. A brand-voice tweak means editing every one of them; a new rule means remembering which agents need it. sopkit splits prompts into pieces:
+Running one agent per customer usually means dozens of near-identical prompts maintained by hand. A tone tweak means editing all of them. A new rule means remembering which ones need it. Copies drift.
 
-| Piece | What it holds | Reaches agents by |
+sopkit keeps the shared parts in one place, in git, and builds every agent's prompt from them.
+
+## Quickstart
+
+**1. Install**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/amanmibra/sopkit/main/install.sh | sh
+```
+
+Installs [uv](https://docs.astral.sh/uv/) if needed. Already have uv? `uv tool install 'sopkit[server] @ git+https://github.com/amanmibra/sopkit'`
+
+**2. Import your existing prompts** with your coding agent
+
+```sh
+sopkit skills install        # adds .claude/skills/sopkit-import
+```
+
+Then run `/sopkit-import` in Claude Code. The agent turns your prompts into sopkit files, checks that nothing was lost, and asks you to approve a one-screen plan before it writes anything.
+
+<details>
+<summary>What the import does, step by step</summary>
+
+| Step | Who | What happens |
 |---|---|---|
-| 🧱 **Base** | identity, brand voice, context, policy | agents `inherits` it, or it targets `agents: "*"` |
-| 📋 **SOP** | a procedure: goal, steps, forbidden actions, warning signs, tools | it targets `agents: [...]` |
-| 🎙️ **Agent** | platform id, placeholder values, text only this agent gets | — |
+| Collect | agent | Copies each existing prompt into `sops/originals/`, asks for anything it can't find |
+| Map | `sopkit overlap` | Finds text every prompt shares, text some share, and near-copies that differ by a value (or have drifted) |
+| Plan | you | Approve a one-screen plan: which bases and SOPs, which to lock, how to handle drift |
+| Build | agent | Writes the files, keeping the original wording |
+| Verify | `sopkit compare` | Fails if any original sentence is missing or changed; the agent repeats until it passes |
+| Review | `sopkit check` | Flags duplicates and conflicts (10pm vs 11pm, "always X" vs "never X") for you to decide |
+| Commit | you | Approve a one-screen summary before anything is committed |
 
-Bases and SOPs can be `locked` so no agent can drop them. Everything lives in git, so review is a PR and rollback is a revert.
+Codex, Cursor and others: `sopkit skills install --dir <their skills folder>`, or ask the agent to follow `.claude/skills/sopkit-import/SKILL.md`.
 
-## Example
+</details>
 
+**3. Load the built prompt in your agent**
+
+```ts
+const instructions = readFileSync(`sops/build/${agentId}.prompt.md`, "utf8");
 ```
-sops/
-  sopkit.yaml
-  bases/brand-voice.md             every agent, locked
-  bases/restaurant-host.md         "You are the phone host for {{restaurant_name}}..."
-  procedures/allergen-check.yaml   every agent
-  procedures/reservations.yaml     only sakura-sushi and luigis-trattoria
-  agents/sakura-sushi.yaml         livekit: sakura-sushi, inherits: [restaurant-host]
-```
 
-Change one shared base and see exactly what moves before you merge:
+See the [LiveKit example](examples/livekit-restaurant) for a complete agent.
 
-```
+## How it works
+
+Prompts are built from three kinds of files:
+
+| | File | Holds | Reaches agents by |
+|---|---|---|---|
+| 🧱 | `bases/*.md` | identity, tone, context, policy | `inherits:` in the agent, or `agents: "*"` |
+| 📋 | `procedures/*.yaml` | SOPs: goal, steps, never-do's, warning signs, tools | `agents: [...]` in the SOP |
+| 🎙️ | `agents/*.yaml` | platform id, values for `{{placeholders}}`, agent-only text | one file per agent |
+
+Lock a base or SOP (`locked: true`) and no agent can drop it.
+
+Change one shared file and see what moves before you merge:
+
+```console
 $ sopkit plan sops --against main
 3 agents change:
   base `brand-voice` edited → 3 agents: luigis-trattoria, sakura-sushi, tonys-pizza
@@ -49,90 +88,55 @@ $ sopkit plan sops --against main
 +Speak warmly and briefly. Use the caller's name once you have it. Ask one question at a time.
 ```
 
-The full commented example is in [`examples/livekit-restaurant/`](examples/livekit-restaurant): a LiveKit agent in TypeScript that loads its prompt from `sops/build/`.
+## Commands
 
-## Get started: import your existing prompts
+| Command | What it does |
+|---|---|
+| `sopkit validate sops` | Check the files |
+| `sopkit render sops` | Build one full prompt per agent into `sops/build/` |
+| `sopkit plan sops --against main` | Which agents a change touches, and why, with diffs |
+| `sopkit check sops` | Duplicated text and conflicting instructions |
+| `sopkit overlap <dir>` | What a set of existing prompts have in common |
+| `sopkit compare sops --originals <dir>` | Confirm built prompts still say everything the originals did |
+| `sopkit skills install` | Install the `/sopkit-import` skill |
+| `sopkit guide` | Print the format reference |
+| `sopkit serve` | Run the HTTP API (see below) |
 
-Already have a prompt per agent? Let your coding agent do the conversion. sopkit ships a skill for it:
+## Serving prompts
 
-```
-curl -fsSL https://raw.githubusercontent.com/amanmibra/sopkit/main/install.sh | sh
-sopkit skills install                    # writes .claude/skills/sopkit-import/SKILL.md
-```
+Instead of shipping prompts with your code, agents can fetch them when a call starts:
 
-The installer sets up [uv](https://docs.astral.sh/uv/) if you don't have it. With uv already installed, this is the same as `uv tool install 'sopkit[server] @ git+https://github.com/amanmibra/sopkit'`.
-
-Then, in Claude Code:
-
-```
-/sopkit-import
-```
-
-(Codex, Cursor and others: install with `sopkit skills install --dir <their skills folder>`, or ask the agent to follow `.claude/skills/sopkit-import/SKILL.md`.)
-
-The agent copies each existing prompt into `sops/originals/`, and the CLI does the checking:
-
-| Step | Command | What it does |
-|---|---|---|
-| Map | `sopkit overlap sops/originals` | Text every prompt shares, text a subset shares, and near-copies that differ only by a value (placeholder candidates, or drift: "upsell once" in two prompts, "twice" in the third) |
-| Build | (the agent) | Writes shared bases, SOPs and one short file per agent, keeping the original wording |
-| Verify | `sopkit compare sops --originals sops/originals` | Fails if any sentence from an original is missing or changed in the rebuilt prompt, and shows the changed words |
-| Review | `sopkit check sops` | Duplicated text, the same sentence with different numbers, "always X" vs "never X", unused variables |
-
-Along the way the agent asks you to fill gaps (missing platform ids, goals it can't find, which values are right where prompts drifted), and stops twice for a quick approval: a one-screen import plan before it writes any file, and a one-screen summary before it commits. It repeats Build and Verify until nothing is lost, and reports conflicts for you to decide instead of resolving them on its own.
-
-## Use
-
-```
-curl -fsSL https://raw.githubusercontent.com/amanmibra/sopkit/main/install.sh | sh
-# or: uv tool install 'sopkit[server] @ git+https://github.com/amanmibra/sopkit'
-# or: pip install 'sopkit[server] @ git+https://github.com/amanmibra/sopkit'
-
-sopkit validate sops/                  # check the files
-sopkit render sops/                    # write sops/build/: one full prompt per agent + lock.json
-sopkit plan sops/ --against main       # which agents change, because of which blocks
-sopkit check sops/                     # duplicates and conflicting instructions
-sopkit guide                           # print the format reference
-SOPKIT_TOKEN=... sopkit serve          # HTTP API; OpenAPI at /openapi.json
-```
-
-An agent fetches its prompt when a call starts:
-
-```
+```http
 GET /v1/workspaces/<workspace>/agents/<agent>/prompt
 Authorization: Bearer <token>
 ```
 
-The response carries `X-Sopkit-Hash`, and the server logs which version each agent was served, so a call can always be traced to the exact prompt it ran with.
+Run it with `SOPKIT_TOKEN=... sopkit serve` (OpenAPI at `/openapi.json`). Every response carries `X-Sopkit-Hash`, and the server logs which version each agent got, so any call can be traced to the exact prompt it ran with.
 
-## The format
+## Working with coding agents
 
-[**FORMAT.md**](FORMAT.md) is the complete reference: every file, every field, how a prompt is assembled, recipes, and validation codes. JSON Schemas are in [`spec/`](spec); add a `# yaml-language-server: $schema=...` line to get autocomplete and hover docs in your editor.
-
-**Using a coding agent?** Point it at the format. In a project that uses sopkit, add this to your `AGENTS.md` or `CLAUDE.md`:
+[FORMAT.md](FORMAT.md) is the full reference, written for people and agents. Add this to your project's `AGENTS.md` or `CLAUDE.md`:
 
 ```markdown
-Voice-agent instructions live in `sops/` in the sopkit format.
+Agent instructions live in `sops/` in the sopkit format.
 Run `sopkit guide` and read it before editing anything there.
-Finish with `sopkit validate sops` and `sopkit plan sops --against main`.
+Finish with `sopkit validate sops`, `sopkit check sops` and `sopkit plan sops --against main`.
 ```
+
+For editor autocomplete, point `yaml-language-server` at the schemas in [`spec/`](spec).
 
 ## Status
 
-Early. Working: the format, rendering, validation, `plan`, import via a coding-agent skill, conflict checks, the CLI, and the HTTP API with a file-based store. Next: a TypeScript client, a GitHub App (plans as PR checks, publish on merge), and suggestions from real calls. See [ROADMAP.md](ROADMAP.md).
+Early, and moving fast. See the [roadmap](ROADMAP.md): next up are a TypeScript client, a GitHub App (plans on PRs, publish on merge), and suggestions from real calls.
 
 ## Contributing
 
-See [CONTRIBUTORS.md](CONTRIBUTORS.md). Contributions welcome; open an issue first for anything big.
+Contributions welcome. Open an issue first for anything big. See [CONTRIBUTORS.md](CONTRIBUTORS.md).
+
+```sh
+uv sync && uv run pytest
+```
 
 ## License
 
 [Apache-2.0](LICENSE)
-
-## Develop
-
-```
-uv sync
-uv run pytest
-uv run python -m sopkit.schema   # regenerate spec/ after changing models.py
-```
