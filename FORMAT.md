@@ -215,4 +215,7 @@ Set exactly one platform field. Elsewhere in sopkit, refer to the agent by its i
 3. Change only files in `bases/`, `procedures/`, `agents/` and `sopkit.yaml`. Never edit `build/`.
 4. Run `sopkit validate <root>` and fix every error.
 5. Run `sopkit plan <root>` (or `sopkit plan <root> --against main`) and confirm that only the agents you meant to change appear.
-6. Run `sopkit render <root>` so `build/` matches.
+6. Run `sopkit check <root>`. If your change introduced a duplicate or conflict, fix it; report pre-existing ones to the user.
+7. Run `sopkit render <root>` so `build/` matches.
+
+To convert existing prompts into this format, follow the `sopkit-import` skill (`sopkit skills install`).

@@ -29,6 +29,7 @@ packages = ["src/sopkit"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "FORMAT.md" = "sopkit/FORMAT.md"
+"skills" = "sopkit/skills"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

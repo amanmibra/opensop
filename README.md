@@ -51,14 +51,44 @@ $ sopkit plan sops --against main
 
 The full commented example is in [`examples/livekit-restaurant/`](examples/livekit-restaurant): a LiveKit agent in TypeScript that loads its prompt from `sops/build/`.
 
+## Get started: import your existing prompts
+
+Already have a prompt per agent? Let your coding agent do the conversion. sopkit ships a skill for it:
+
+```
+uv tool install 'sopkit[server] @ git+https://github.com/amanmibra/sopkit'
+sopkit skills install                    # writes .claude/skills/sopkit-import/SKILL.md
+```
+
+Then, in Claude Code:
+
+```
+/sopkit-import
+```
+
+(Codex, Cursor and others: install with `sopkit skills install --dir <their skills folder>`, or ask the agent to follow `.claude/skills/sopkit-import/SKILL.md`.)
+
+The agent copies each existing prompt into `sops/originals/`, and the CLI does the checking:
+
+| Step | Command | What it does |
+|---|---|---|
+| Map | `sopkit overlap sops/originals` | Text every prompt shares, text a subset shares, and near-copies that differ only by a value (placeholder candidates, or drift: "upsell once" in two prompts, "twice" in the third) |
+| Build | (the agent) | Writes shared bases, SOPs and one short file per agent, keeping the original wording |
+| Verify | `sopkit compare sops --originals sops/originals` | Fails if any sentence from an original is missing or changed in the rebuilt prompt, and shows the changed words |
+| Review | `sopkit check sops` | Duplicated text, the same sentence with different numbers, "always X" vs "never X", unused variables |
+
+The agent repeats Build and Verify until nothing is lost, then reports the conflicts for you to decide. It doesn't resolve them on its own.
+
 ## Use
 
 ```
-pip install 'sopkit[server]'
+uv tool install 'sopkit[server] @ git+https://github.com/amanmibra/sopkit'
+# or: pip install 'sopkit[server] @ git+https://github.com/amanmibra/sopkit'
 
 sopkit validate sops/                  # check the files
 sopkit render sops/                    # write sops/build/: one full prompt per agent + lock.json
 sopkit plan sops/ --against main       # which agents change, because of which blocks
+sopkit check sops/                     # duplicates and conflicting instructions
 sopkit guide                           # print the format reference
 SOPKIT_TOKEN=... sopkit serve          # HTTP API; OpenAPI at /openapi.json
 ```
@@ -86,7 +116,7 @@ Finish with `sopkit validate sops` and `sopkit plan sops --against main`.
 
 ## Status
 
-Early. Working: the format, rendering, validation, `plan`, the CLI, and the HTTP API with a file-based store. Next: a GitHub App (plans as PR checks, publish on merge), a TUI for importing existing prompts and composing agents, and suggestions from conflicts and real calls. See [ROADMAP.md](ROADMAP.md).
+Early. Working: the format, rendering, validation, `plan`, import via a coding-agent skill, conflict checks, the CLI, and the HTTP API with a file-based store. Next: a TypeScript client, a GitHub App (plans as PR checks, publish on merge), and suggestions from real calls. See [ROADMAP.md](ROADMAP.md).
 
 ## Contributing
 

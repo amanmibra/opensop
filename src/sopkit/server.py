@@ -13,6 +13,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
+from . import analyze
 from .issues import Issue, SopkitError
 from .loader import load_workspace_files
 from .plan import make_plan, snapshot
@@ -112,6 +113,11 @@ def create_app(store: FileStore, token: str | None = None) -> FastAPI:
         before = snapshot(_render(req.base)) if req.base else {}
         result = make_plan(before, snapshot(_render(req.head)))
         return {**result.to_dict(), "markdown": result.markdown()}
+
+    @app.post("/v1/check", dependencies=[Depends(auth)])
+    def check(req: FilesRequest) -> list[dict]:
+        """Duplicated text and mechanical conflicts (numbers, always/never) in each agent's prompt. Advisory."""
+        return [f.to_dict() for f in analyze.check(load_workspace_files(req.files))]
 
     @app.post("/v1/workspaces/{workspace}/publish", response_model=PublishResponse, dependencies=[Depends(auth)])
     def publish(workspace: str, req: FilesRequest) -> dict:
