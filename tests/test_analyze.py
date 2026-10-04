@@ -63,10 +63,12 @@ def test_compare_reports_changed_missing_and_reworded():
     build = sopkit.render_workspace(sopkit.load_workspace(SOPS))
     originals = read_dir(ORIGINALS)
     originals["sakura-sushi"] += "\nGift cards can be bought at the counter on weekends.\n"
+    originals["sakura-sushi"] = originals["sakura-sushi"].replace("Ask one question at a time.", "Ask up to two questions at a time.")
     results = {r.agent: r for r in analyze.compare(build, originals)}
 
     assert results["luigis-trattoria"].changed == [("Never upsell more than twice per call.", "Never upsell more than once per call.")]
     assert results["sakura-sushi"].missing == ["Gift cards can be bought at the counter on weekends."]
+    assert results["sakura-sushi"].changed == [("Ask up to two questions at a time.", "Ask one question at a time.")]
     assert any(u.startswith("ALLERGIES:") for u in results["tonys-pizza"].reworded)
     assert not any(r.ok for r in results.values() if r.agent != "tonys-pizza" or r.changed)
     assert not any("tool." in u for r in results.values() for u in r.added), "sopkit's own tool lines are not 'added'"

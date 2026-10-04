@@ -192,22 +192,21 @@ _STOPWORDS = set(
 )
 
 
-def compare(build: Build, originals: dict[str, str], threshold: float = 0.9, reworded_at: float = 0.6) -> list[Comparison]:
+def compare(build: Build, originals: dict[str, str], threshold: float = 0.9) -> list[Comparison]:
     results = []
     for agent, original in sorted(originals.items()):
         rendered = build.agents.get(agent)
         rendered_units = units(rendered.prompt) if rendered else []
-        rendered_words = set(words(rendered.prompt)) if rendered else set()
         original_units = units(original)
         missing, changed, reworded = [], [], []
         for u in original_units:
             if _found(u, rendered_units, threshold):
                 continue
             closest = max(rendered_units, key=lambda p: similarity(u, p), default="")
-            if closest and similarity(u, closest) >= 0.7:
-                changed.append((u, closest))
-            elif _word_coverage(u, rendered_words) >= reworded_at:
+            if _split_across(u, rendered_units):
                 reworded.append(u)
+            elif closest and similarity(u, closest) >= 0.5:
+                changed.append((u, closest))
             else:
                 missing.append(u)
         added = [u for u in rendered_units if not _GENERATED.match(u) and not _found(u, original_units, threshold)]
@@ -219,6 +218,17 @@ def compare(build: Build, originals: dict[str, str], threshold: float = 0.9, rew
 def _found(unit: str, pool: list[str], threshold: float) -> bool:
     n = norm(unit)
     return any(n == norm(p) or n in norm(p) or similarity(unit, p) >= threshold for p in pool)
+
+
+def _split_across(unit: str, pool: list[str]) -> bool:
+    """True when one original sentence became several rendered lines (e.g. a sentence listing
+    three actions became three SOP steps): at least two lines mostly repeat its words, and
+    together they cover most of it."""
+    unit_words = set(words(unit))
+    parts = [p for p in pool if not _GENERATED.match(p) and _word_coverage(p, unit_words) >= 0.6]
+    if len(parts) < 2:
+        return False
+    return _word_coverage(unit, set().union(*(words(p) for p in parts))) >= 0.7
 
 
 def _word_coverage(unit: str, pool: set[str]) -> float:
