@@ -1,0 +1,19 @@
+{
+  "name": "livekit-restaurant",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc && node dist/main.js dev",
+    "start": "node dist/main.js start",
+    "sops": "sopkit render sops && sopkit validate sops"
+  },
+  "dependencies": {
+    "@livekit/agents": "^1.0.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

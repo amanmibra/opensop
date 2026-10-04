@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../../../spec/sop.schema.json
+#
+# Targets two agents by id. Use the platform ref ("vapi:asst_...") if you prefer.
+
+name: Reservations
+agents: [sakura-sushi, luigis-trattoria]
+
+# prompt (the default): the whole SOP goes in the prompt. `auto` or `tool` would
+# leave some of it out and tell the agent to fetch it with a get_sop tool, which
+# this example agent doesn't register.
+delivery: prompt
+
+description: The customer has a confirmed table, or knows exactly why one isn't available.
+scope: The customer wants to book, change or cancel a table.
+procedureSteps:
+  - Ask for party size, date and time
+  - text: Check availability
+    tool: check_reservations
+  - Confirm the booking details and the name on the reservation
+forbiddenActions:
+  - Never double-book a table

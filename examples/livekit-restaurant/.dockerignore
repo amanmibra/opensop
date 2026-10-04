@@ -1,0 +1,4 @@
+node_modules
+dist
+.env.local
+# Don't ignore sops/build: the agent reads its prompt from there.

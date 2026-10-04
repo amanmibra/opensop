@@ -1,0 +1,37 @@
+{
+  "additionalProperties": false,
+  "description": "sopkit.yaml at the root of a sopkit folder.",
+  "properties": {
+    "version": {
+      "const": 1,
+      "default": 1,
+      "description": "Format version. Always 1 for now.",
+      "title": "Version",
+      "type": "integer"
+    },
+    "variables": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Default values for {{name}} placeholders, for every agent.",
+      "title": "Variables",
+      "type": "object"
+    },
+    "sops_heading": {
+      "default": "## Procedures",
+      "description": "Heading rendered above the SOPs in each prompt.",
+      "title": "Sops Heading",
+      "type": "string"
+    },
+    "sop_order": {
+      "description": "SOP ids to render first, in this order. The rest follow alphabetically.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Sop Order",
+      "type": "array"
+    }
+  },
+  "title": "sopkit.yaml",
+  "type": "object"
+}

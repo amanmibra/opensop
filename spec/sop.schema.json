@@ -1,0 +1,162 @@
+{
+  "$defs": {
+    "Step": {
+      "additionalProperties": false,
+      "description": "A step, forbidden action or warning sign that names a tool.",
+      "properties": {
+        "text": {
+          "description": "What the agent should do (or never do, or watch for).",
+          "title": "Text",
+          "type": "string"
+        },
+        "tool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Name of a tool the agent has (e.g. a LiveKit function tool). Rendered as an instruction to use it, and checked against the call's tool log.",
+          "title": "Tool"
+        },
+        "required": {
+          "default": false,
+          "description": "Steps only: the tool call must happen whenever this SOP applies, even if the goal was met another way.",
+          "title": "Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "Step",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A procedure the agent follows. Written as procedures/<id>.yaml.",
+  "properties": {
+    "agents": {
+      "anyOf": [
+        {
+          "const": "*",
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      ],
+      "description": "Agents this block applies to without them opting in. \"*\" for every agent, or a list of agent ids (file names in agents/) or platform refs like \"vapi:asst_9f3e\". Empty means only agents that inherit it (bases) or none (SOPs).",
+      "title": "Agents"
+    },
+    "exclude": {
+      "description": "Agent ids or platform refs to leave out, even when `agents` matches them.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Exclude",
+      "type": "array"
+    },
+    "id": {
+      "description": "The file name without .yaml. Set automatically; if you write it, it must match.",
+      "title": "Id",
+      "type": "string"
+    },
+    "name": {
+      "description": "Heading shown in the prompt, e.g. \"Allergen check\".",
+      "title": "Name",
+      "type": "string"
+    },
+    "locked": {
+      "default": false,
+      "description": "If true, no agent can exclude this SOP.",
+      "title": "Locked",
+      "type": "boolean"
+    },
+    "delivery": {
+      "default": "prompt",
+      "description": "\"prompt\": the whole SOP is in the prompt. \"auto\": name, scope, forbidden actions and warning signs are in the prompt; the agent fetches the rest with the get_sop tool. \"tool\": only name and scope are in the prompt.",
+      "enum": [
+        "prompt",
+        "auto",
+        "tool"
+      ],
+      "title": "Delivery",
+      "type": "string"
+    },
+    "description": {
+      "default": "",
+      "description": "The goal: the outcome that means this SOP succeeded. QA uses it to go easier on skipped steps when the goal was still met.",
+      "title": "Description",
+      "type": "string"
+    },
+    "scope": {
+      "default": "",
+      "description": "When this SOP applies: the situation that should trigger it.",
+      "title": "Scope",
+      "type": "string"
+    },
+    "guidance": {
+      "default": "",
+      "description": "Free text that isn't a step, forbidden action or warning sign: context, nuance, examples.",
+      "title": "Guidance",
+      "type": "string"
+    },
+    "procedureSteps": {
+      "description": "Ordered steps. Each is a string, or {text, tool, required}.",
+      "items": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/$defs/Step"
+          }
+        ]
+      },
+      "title": "Proceduresteps",
+      "type": "array"
+    },
+    "forbiddenActions": {
+      "description": "Things the agent must never do. Each is a string, or {text, tool}.",
+      "items": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/$defs/Step"
+          }
+        ]
+      },
+      "title": "Forbiddenactions",
+      "type": "array"
+    },
+    "warningSigns": {
+      "description": "Situations that need special handling, usually an escalation. Each is a string, or {text, tool}.",
+      "items": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/$defs/Step"
+          }
+        ]
+      },
+      "title": "Warningsigns",
+      "type": "array"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "title": "sopkit SOP: procedures/<id>.yaml",
+  "type": "object"
+}

@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../spec/sopkit.schema.json
+#
+# sopkit.yaml marks the root of a sopkit folder. Every field is optional.
+
+version: 1
+
+# Default values for {{placeholders}}. An agent's own `variables` override these.
+variables:
+  staff_transfer: the manager on duty
+
+# Heading rendered above the SOPs in every prompt.
+sops_heading: "## Procedures"
+
+# SOPs listed here render first, in this order. Unlisted SOPs follow alphabetically.
+sop_order: [allergen-check]

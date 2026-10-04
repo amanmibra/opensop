@@ -1,0 +1,82 @@
+{
+  "additionalProperties": false,
+  "description": "One voice agent, identified by its platform's own id. Written as agents/<id>.yaml.",
+  "properties": {
+    "id": {
+      "description": "Alias used everywhere else in sopkit: the file name without .yaml. Set automatically.",
+      "title": "Id",
+      "type": "string"
+    },
+    "livekit": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "LiveKit agent_name. Set exactly one of livekit, vapi, elevenlabs.",
+      "title": "Livekit"
+    },
+    "vapi": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Vapi assistant id. Set exactly one of livekit, vapi, elevenlabs.",
+      "title": "Vapi"
+    },
+    "elevenlabs": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "ElevenLabs agent_id. Set exactly one of livekit, vapi, elevenlabs.",
+      "title": "Elevenlabs"
+    },
+    "inherits": {
+      "description": "Base ids to include, in order. Their parents come first.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Inherits",
+      "type": "array"
+    },
+    "exclude": {
+      "description": "Ids of bases or SOPs that target this agent but shouldn't apply. Locked ones can't be excluded.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Exclude",
+      "type": "array"
+    },
+    "variables": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Values for {{name}} placeholders. Override the defaults in sopkit.yaml.",
+      "title": "Variables",
+      "type": "object"
+    },
+    "instructions": {
+      "default": "",
+      "description": "Text only this agent gets, rendered after the top bases and before the SOPs.",
+      "title": "Instructions",
+      "type": "string"
+    }
+  },
+  "title": "sopkit agent: agents/<id>.yaml",
+  "type": "object"
+}
