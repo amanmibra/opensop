@@ -1,6 +1,6 @@
 # Contributors
 
-People who have shaped sopkit through code, design, or real-world use. Add yourself in your first pull request.
+People who have shaped OpenSOP through code, design, or real-world use. Add yourself in your first pull request.
 
 | Name | GitHub | Contributions |
 |---|---|---|
@@ -10,7 +10,7 @@ People who have shaped sopkit through code, design, or real-world use. Add yours
 
 1. Open an issue first for anything bigger than a small fix, so we can agree on the approach.
 2. Set up: `uv sync`, then `uv run pytest`.
-3. If you change the format (`src/sopkit/models.py`), regenerate the schemas with `uv run python -m sopkit.schema` and update [FORMAT.md](FORMAT.md).
+3. If you change the format (`src/opensop/models.py`), regenerate the schemas with `uv run python -m opensop.schema` and update [FORMAT.md](FORMAT.md).
 4. If you change rendering, regenerate the golden output and the example build (see [AGENTS.md](AGENTS.md)), and review the diffs.
 5. Keep examples and fixtures fictional. Never commit real customer names, prompts, or call data.
 

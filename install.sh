@@ -1,21 +1,21 @@
 #!/bin/sh
-# Install the sopkit CLI.
+# Install the opensop CLI.
 #
-#   curl -fsSL https://raw.githubusercontent.com/amanmibra/sopkit/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | sh
 #
-# Installs uv (https://docs.astral.sh/uv/) first if it's missing, then installs sopkit as a uv tool.
+# Installs uv (https://docs.astral.sh/uv/) first if it's missing, then installs opensop as a uv tool.
 # Options (environment variables):
-#   SOPKIT_REF=<branch|tag|commit>   install a specific version (default: main)
+#   OPENSOP_REF=<branch|tag|commit>   install a specific version (default: main)
 
 set -eu
 
-REPO="https://github.com/amanmibra/sopkit"
-REF="${SOPKIT_REF:-main}"
+REPO="https://github.com/amanmibra/opensop"
+REF="${OPENSOP_REF:-main}"
 
 FRESH_UV=""
 
-say() { printf 'sopkit: %s\n' "$1"; }
-fail() { printf 'sopkit: error: %s\n' "$1" >&2; exit 1; }
+say() { printf 'opensop: %s\n' "$1"; }
+fail() { printf 'opensop: error: %s\n' "$1" >&2; exit 1; }
 
 if ! command -v uv >/dev/null 2>&1; then
   say "uv not found; installing it from astral.sh"
@@ -34,15 +34,15 @@ if ! command -v uv >/dev/null 2>&1; then
   command -v uv >/dev/null 2>&1 || fail "uv installed but not on PATH; open a new terminal and rerun"
 fi
 
-SPEC="sopkit @ git+$REPO@$REF"
+SPEC="opensop @ git+$REPO@$REF"
 
 say "installing $SPEC"
 uv tool install --force --quiet "$SPEC"
 
-if command -v sopkit >/dev/null 2>&1; then
-  say "installed: $(command -v sopkit)"
+if command -v opensop >/dev/null 2>&1; then
+  say "installed: $(command -v opensop)"
   if [ -n "$FRESH_UV" ]; then
-    say "open a new terminal (or run: . \"\$HOME/.local/bin/env\") so your shell finds sopkit"
+    say "open a new terminal (or run: . \"\$HOME/.local/bin/env\") so your shell finds opensop"
   fi
 else
   BIN_DIR="$(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin")"
@@ -50,4 +50,4 @@ else
   say "run 'uv tool update-shell' (or add $BIN_DIR to PATH) and open a new terminal."
 fi
 
-say "next: 'sopkit skills install', then run /sopkit-import in your coding agent"
+say "next: 'opensop skills install', then run /opensop-import in your coding agent"

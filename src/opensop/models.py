@@ -1,7 +1,7 @@
-"""The sopkit spec: bases, SOPs, agents and workspace config.
+"""The opensop spec: bases, SOPs, agents and workspace config.
 
 These models are the source of truth for the format. `spec/*.schema.json` is
-generated from them (see `sopkit.schema`) so other languages and editors can
+generated from them (see `opensop.schema`) so other languages and editors can
 validate files. Field descriptions here become the schema's documentation.
 """
 
@@ -105,7 +105,7 @@ class SOP(Targeting):
 class Agent(_Strict):
     """One voice agent, identified by its platform's own id. Written as agents/<id>.yaml."""
 
-    id: str = Field(description="Alias used everywhere else in sopkit: the file name without .yaml. Set automatically.")
+    id: str = Field(description="Alias used everywhere else in opensop: the file name without .yaml. Set automatically.")
     livekit: str | None = Field(None, description="LiveKit agent_name. Set exactly one of livekit, vapi, elevenlabs.")
     vapi: str | None = Field(None, description="Vapi assistant id. Set exactly one of livekit, vapi, elevenlabs.")
     elevenlabs: str | None = Field(None, description="ElevenLabs agent_id. Set exactly one of livekit, vapi, elevenlabs.")
@@ -114,7 +114,7 @@ class Agent(_Strict):
         default_factory=list, description="Ids of bases or SOPs that target this agent but shouldn't apply. Locked ones can't be excluded."
     )
     variables: dict[str, str] = Field(
-        default_factory=dict, description="Values for {{name}} placeholders. Override the defaults in sopkit.yaml."
+        default_factory=dict, description="Values for {{name}} placeholders. Override the defaults in opensop.yaml."
     )
     instructions: str = Field("", description="Text only this agent gets, rendered after the top bases and before the SOPs.")
 
@@ -135,7 +135,7 @@ class Agent(_Strict):
 
 
 class WorkspaceConfig(_Strict):
-    """sopkit.yaml at the root of a sopkit folder."""
+    """opensop.yaml at the root of a opensop folder."""
 
     version: Literal[1] = Field(1, description="Format version. Always 1 for now.")
     variables: dict[str, str] = Field(default_factory=dict, description="Default values for {{name}} placeholders, for every agent.")

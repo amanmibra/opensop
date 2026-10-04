@@ -5,7 +5,7 @@
     compare(build, originals) does each rendered prompt still contain everything its original said?
     check(workspace)          duplicated text and mechanical conflicts within each agent's prompt
 
-These do the counting so an LLM (the /sopkit-import skill) can focus on judgment. None of
+These do the counting so an LLM (the /opensop-import skill) can focus on judgment. None of
 them understand meaning: "we deliver" vs "pickup only" needs a model to catch.
 """
 
@@ -24,7 +24,7 @@ _SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(])")
 _LIST_MARKER = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 _HEADING = re.compile(r"^\s*#{1,6}\s+")
 _LABEL_ONLY = re.compile(r"^[A-Za-z][A-Za-z ]{0,30}:$")  # "Steps:", "Never:", "Warning signs:"
-_SOPKIT_PREFIX = re.compile(r"^(?:Goal|When this applies):\s+")
+_OPENSOP_PREFIX = re.compile(r"^(?:Goal|When this applies):\s+")
 _WORD = re.compile(r"[a-z0-9]+(?:'[a-z]+)?")
 _NUMBER = re.compile(r"\d+(?:[.:]\d+)?")
 _NEGATIONS = {"not", "never", "no", "don't", "dont", "doesn't", "cannot", "can't", "won't", "without", "nothing"}
@@ -40,7 +40,7 @@ def units(text: str) -> list[str]:
         if not line or _HEADING.match(line) or _LABEL_ONLY.match(line):
             continue
         line = _LIST_MARKER.sub("", line)
-        line = _SOPKIT_PREFIX.sub("", line)
+        line = _OPENSOP_PREFIX.sub("", line)
         out += [s.strip() for s in _SENTENCE_END.split(line) if s.strip()]
     return [u for u in out if len(words(u)) >= MIN_WORDS]
 
@@ -174,7 +174,7 @@ class Comparison:
     missing: list[str]  # in the original; its words mostly aren't in the rendered prompt
     changed: list[tuple[str, str]]  # (original, rendered): nearly the same sentence, different words
     reworded: list[str]  # in the original; most of its words are there, but not as one sentence
-    added: list[str]  # in the rendered prompt, not in the original (sopkit's own tool lines excluded)
+    added: list[str]  # in the rendered prompt, not in the original (opensop's own tool lines excluded)
 
     @property
     def coverage(self) -> float:
@@ -185,7 +185,7 @@ class Comparison:
         return not self.missing and not self.changed
 
 
-# Sentences sopkit writes itself when rendering steps with tools or tool-delivered SOPs.
+# Sentences opensop writes itself when rendering steps with tools or tool-delivered SOPs.
 _GENERATED = re.compile(r"^(?:Use the `[^`]+` tool\.|This applies to the `[^`]+` tool\.|Before following this procedure, call the `get_sop` tool.*)$")
 _STOPWORDS = set(
     "a an and are as at be by for from has have if in is it its of on or so that the their them they this to was were when with you your".split()

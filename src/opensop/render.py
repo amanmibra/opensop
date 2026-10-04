@@ -6,7 +6,7 @@ Render order for an agent:
     2. the agent's own instructions
     3. SOPs that target the agent, under `sops_heading`
     4. bottom bases (`position: bottom`), same ordering rules
-Variables (`{{name}}`) are filled last, from sopkit.yaml defaults then the agent.
+Variables (`{{name}}`) are filled last, from opensop.yaml defaults then the agent.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from .issues import Issue, SopkitError
+from .issues import Issue, OpenSOPError
 from .models import SOP, Agent, Base, Step, StepLike, Targeting, Workspace
 
 VARIABLE = re.compile(r"\{\{\s*([A-Za-z_][\w.-]*)\s*\}\}")
@@ -59,13 +59,13 @@ class Build:
 
 
 def render_workspace(ws: Workspace) -> Build:
-    """Validate and render every agent. Raises SopkitError if there are errors."""
+    """Validate and render every agent. Raises OpenSOPError if there are errors."""
     from .validate import validate
 
     issues = validate(ws)
     errors = [i for i in issues if i.severity == "error"]
     if errors:
-        raise SopkitError(errors)
+        raise OpenSOPError(errors)
     return Build(
         agents={agent_id: render_agent(ws, agent) for agent_id, agent in sorted(ws.agents.items())},
         warnings=[i for i in issues if i.severity == "warning"],

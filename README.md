@@ -1,10 +1,10 @@
 <div align="center">
 
-# 🧩 sopkit
+# 🧩 OpenSOP
 
 **Modular, git-versioned instructions for task-driven agents.**
 
-Write shared instructions and SOPs once. sopkit builds each agent's full prompt<br>
+Write shared instructions and SOPs once. OpenSOP builds each agent's full prompt<br>
 and shows exactly which agents a change touches.
 
 [Quickstart](#quickstart) · [How it works](#how-it-works) · [Commands](#commands) · [Format](FORMAT.md) · [Example](examples/livekit-restaurant)
@@ -15,27 +15,29 @@ and shows exactly which agents a change touches.
 
 ## Why
 
+An SOP is a standard operating procedure: what an agent should do in a given situation, step by step.
+
 Running one agent per customer usually means dozens of near-identical prompts maintained by hand. A tone tweak means editing all of them. A new rule means remembering which ones need it. Copies drift.
 
-sopkit keeps the shared parts in one place, in git, and builds every agent's prompt from them.
+OpenSOP keeps the shared parts in one place, in git, and builds every agent's prompt from them.
 
 ## Quickstart
 
 **1. Install**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/amanmibra/sopkit/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | sh
 ```
 
-Installs [uv](https://docs.astral.sh/uv/) if needed. Already have uv? `uv tool install 'sopkit @ git+https://github.com/amanmibra/sopkit'`
+Installs [uv](https://docs.astral.sh/uv/) if needed. Already have uv? `uv tool install 'opensop @ git+https://github.com/amanmibra/opensop'`
 
 **2. Import your existing prompts** with your coding agent
 
 ```sh
-sopkit skills install        # adds .claude/skills/sopkit-import
+opensop skills install        # adds .claude/skills/opensop-import
 ```
 
-Then run `/sopkit-import` in Claude Code. The agent turns your prompts into sopkit files, checks that nothing was lost, and asks you to approve a one-screen plan before it writes anything.
+Then run `/opensop-import` in Claude Code. The agent turns your prompts into OpenSOP files, checks that nothing was lost, and asks you to approve a one-screen plan before it writes anything.
 
 <details>
 <summary>What the import does, step by step</summary>
@@ -43,14 +45,14 @@ Then run `/sopkit-import` in Claude Code. The agent turns your prompts into sopk
 | Step | Who | What happens |
 |---|---|---|
 | Collect | agent | Copies each existing prompt into `sops/originals/`, asks for anything it can't find |
-| Map | `sopkit overlap` | Finds text every prompt shares, text some share, and near-copies that differ by a value (or have drifted) |
+| Map | `opensop overlap` | Finds text every prompt shares, text some share, and near-copies that differ by a value (or have drifted) |
 | Plan | you | Approve a one-screen plan: which bases and SOPs, which to lock, how to handle drift |
 | Build | agent | Writes the files, keeping the original wording |
-| Verify | `sopkit compare` | Fails if any original sentence is missing or changed; the agent repeats until it passes |
-| Review | `sopkit check` | Flags duplicates and conflicts (10pm vs 11pm, "always X" vs "never X") for you to decide |
+| Verify | `opensop compare` | Fails if any original sentence is missing or changed; the agent repeats until it passes |
+| Review | `opensop check` | Flags duplicates and conflicts (10pm vs 11pm, "always X" vs "never X") for you to decide |
 | Commit | you | Approve a one-screen summary before anything is committed |
 
-Codex, Cursor and others: `sopkit skills install --dir <their skills folder>`, or ask the agent to follow `.claude/skills/sopkit-import/SKILL.md`.
+Codex, Cursor and others: `opensop skills install --dir <their skills folder>`, or ask the agent to follow `.claude/skills/opensop-import/SKILL.md`.
 
 </details>
 
@@ -77,7 +79,7 @@ Lock a base or SOP (`locked: true`) and no agent can drop it.
 Change one shared file and see what moves before you merge:
 
 ```console
-$ sopkit plan sops --against main
+$ opensop plan sops --against main
 3 agents change:
   base `brand-voice` edited → 3 agents: luigis-trattoria, sakura-sushi, tonys-pizza
   SOP `reservations` edited → 2 agents: luigis-trattoria, sakura-sushi
@@ -92,34 +94,34 @@ $ sopkit plan sops --against main
 
 | Command | What it does |
 |---|---|
-| `sopkit validate sops` | Check the files |
-| `sopkit render sops` | Build one full prompt per agent into `sops/build/` |
-| `sopkit plan sops --against main` | Which agents a change touches, and why, with diffs |
-| `sopkit check sops` | Duplicated text and conflicting instructions |
-| `sopkit overlap <dir>` | What a set of existing prompts have in common |
-| `sopkit compare sops --originals <dir>` | Confirm built prompts still say everything the originals did |
-| `sopkit skills install` | Install the `/sopkit-import` skill |
-| `sopkit guide` | Print the format reference |
+| `opensop validate sops` | Check the files |
+| `opensop render sops` | Build one full prompt per agent into `sops/build/` |
+| `opensop plan sops --against main` | Which agents a change touches, and why, with diffs |
+| `opensop check sops` | Duplicated text and conflicting instructions |
+| `opensop overlap <dir>` | What a set of existing prompts have in common |
+| `opensop compare sops --originals <dir>` | Confirm built prompts still say everything the originals did |
+| `opensop skills install` | Install the `/opensop-import` skill |
+| `opensop guide` | Print the format reference |
 
 ## Serving prompts
 
-sopkit builds prompts into `sops/build/`, and the simplest setup ships them with your agent's code. To have agents fetch their prompt when a call starts instead (so a merge goes live without a redeploy), use **sopserve**, the companion server, which is in its own repo and still early.
+OpenSOP builds prompts into `sops/build/`, and the simplest setup ships them with your agent's code. To have agents fetch their prompt when a call starts instead (so a merge goes live without a redeploy), use **sopserve**, the companion server, which is in its own repo and still early.
 
 ## Working with coding agents
 
 [FORMAT.md](FORMAT.md) is the full reference, written for people and agents. Add this to your project's `AGENTS.md` or `CLAUDE.md`:
 
 ```markdown
-Agent instructions live in `sops/` in the sopkit format.
-Run `sopkit guide` and read it before editing anything there.
-Finish with `sopkit validate sops`, `sopkit check sops` and `sopkit plan sops --against main`.
+Agent instructions live in `sops/` in the opensop format.
+Run `opensop guide` and read it before editing anything there.
+Finish with `opensop validate sops`, `opensop check sops` and `opensop plan sops --against main`.
 ```
 
 For editor autocomplete, point `yaml-language-server` at the schemas in [`spec/`](spec).
 
 ## Status
 
-Early, and moving fast. See the [roadmap](ROADMAP.md): next up are more checks and suggestions from real calls. Serving, the GitHub App and the TypeScript client are part of sopserve.
+Early. OpenSOP is deliberately just the format and the tools to build and check it; serving prompts and evaluating calls are left to other tools. See the [roadmap](ROADMAP.md).
 
 ## Contributing
 

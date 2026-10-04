@@ -1,6 +1,6 @@
 """Export JSON Schemas for the file formats into spec/.
 
-Run `python -m sopkit.schema` after changing models.py; a test checks spec/ is current.
+Run `python -m opensop.schema` after changing models.py; a test checks spec/ is current.
 """
 
 from __future__ import annotations
@@ -28,10 +28,10 @@ def _schema(model: type[BaseModel], title: str, drop: set[str] = frozenset()) ->
 
 def schemas() -> dict[str, dict]:
     return {
-        "base.schema.json": _schema(Base, "sopkit base: front matter of bases/<id>.md", {"text"}),
-        "sop.schema.json": _schema(SOP, "sopkit SOP: procedures/<id>.yaml"),
-        "agent.schema.json": _schema(Agent, "sopkit agent: agents/<id>.yaml"),
-        "sopkit.schema.json": _schema(WorkspaceConfig, "sopkit.yaml"),
+        "base.schema.json": _schema(Base, "OpenSOP base: front matter of bases/<id>.md", {"text"}),
+        "sop.schema.json": _schema(SOP, "OpenSOP SOP: procedures/<id>.yaml"),
+        "agent.schema.json": _schema(Agent, "OpenSOP agent: agents/<id>.yaml"),
+        "opensop.schema.json": _schema(WorkspaceConfig, "opensop.yaml"),
     }
 
 

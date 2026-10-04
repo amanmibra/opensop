@@ -1,6 +1,6 @@
 {
   "additionalProperties": false,
-  "description": "sopkit.yaml at the root of a sopkit folder.",
+  "description": "opensop.yaml at the root of a opensop folder.",
   "properties": {
     "version": {
       "const": 1,
@@ -32,6 +32,6 @@
       "type": "array"
     }
   },
-  "title": "sopkit.yaml",
+  "title": "opensop.yaml",
   "type": "object"
 }

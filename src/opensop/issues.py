@@ -16,7 +16,7 @@ class Issue:
         return f"{where}{self.severity} [{self.code}] {self.message}"
 
 
-class SopkitError(Exception):
+class OpenSOPError(Exception):
     def __init__(self, issues: list[Issue]):
         self.issues = issues
         super().__init__("\n".join(str(i) for i in issues))

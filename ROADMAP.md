@@ -1,24 +1,28 @@
 # Roadmap
 
+OpenSOP is the format for writing, versioning and building agent instructions, plus the tools to check them. It stays small on purpose. Serving prompts, evaluating calls and editing UIs belong in other tools that read the format.
+
 ## Done
 
 - **Format.** Bases (inherited prompt text, lockable), SOPs (goal, scope, guidance, steps, forbidden actions, warning signs, tools) and agents keyed by platform id. JSON Schemas in `spec/`; reference in [FORMAT.md](FORMAT.md).
-- **Rendering and validation.** One full prompt per agent, `lock.json` with block hashes, clear errors (including YAML colon traps).
-- **`sopkit plan`.** Which agents a change touches and because of which block, with a prompt diff per agent, against a git ref or the committed build.
-- **Import via coding agents.** A `/sopkit-import` skill plus `sopkit overlap` (what prompts share), `sopkit compare` (nothing lost or changed) and `sopkit check` (duplicates and mechanical conflicts).
-- **LiveKit example.** A TypeScript agent that loads its prompt from the build ([examples/livekit-restaurant](examples/livekit-restaurant)).
+- **Build and validate.** One full prompt per agent, `lock.json` with block hashes and referenced tools, clear errors (including YAML colon traps).
+- **`plan`.** Which agents a change touches and because of which block, with a prompt diff per agent.
+- **`check`.** Duplicated text, number conflicts, "always X" vs "never X", unused variables.
+- **Import.** The `/opensop-import` skill for coding agents, with `overlap` and `compare` to prove nothing was lost.
+- **LiveKit example.** A TypeScript agent that loads its prompt from the build, with mock tools ([examples/livekit-restaurant](examples/livekit-restaurant)).
 
 ## Next
 
-1. **Editor (web UI).** Compose agents with inherited blocks shown inline and a live preview of every affected prompt.
-2. **More static checks.** Vague or uncheckable rules, SOPs without goals, prompt length per agent.
-3. **Calls → clusters → suggestions.** Ingest calls and findings from any source, grade them against the exact SOP versions they ran with (goal met? required tools called? forbidden actions avoided?), group violations into clusters with example calls, and turn labeled clusters into suggested changes as PRs.
-4. **Tool delivery.** An MCP / HTTP `get_sop` tool for `delivery: auto | tool` SOPs.
-5. **Push adapters.** Write rendered prompts to Vapi and ElevenLabs by assistant / agent id, with drift detection. LiveKit has no instructions API, so LiveKit agents load their prompt instead.
+1. **Tool check.** Warn when an SOP names a tool the agent doesn't register.
+2. **More checks.** Vague or uncheckable rules, prompt length per agent.
 
-## In sopserve (separate repo)
+Beyond that, the next steps come from teams using it.
 
-- Serving prompts at call start, publishing, the GitHub App (plans on PRs, publish on merge) and a TypeScript client.
+## Out of scope (other tools read the format)
+
+- **Serving prompts at call start, publishing on merge:** sopserve, a separate project.
+- **Evaluating calls against SOPs:** QA and evaluation tools. `lock.json` tells them exactly which SOP version each call ran with.
+- **Editors and UIs.**
 
 ## Principles
 

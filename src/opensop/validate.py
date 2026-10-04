@@ -43,7 +43,7 @@ def validate(ws: Workspace) -> list[Issue]:
             issues.append(Issue("missing_goal", "no description (goal); QA can't judge whether the goal was met", _sop_path(sop.id), "warning"))
     for sop_id in ws.config.sop_order:
         if sop_id not in ws.sops:
-            issues.append(Issue("unknown_sop", f"sop_order lists '{sop_id}', which is not an SOP", "sopkit.yaml"))
+            issues.append(Issue("unknown_sop", f"sop_order lists '{sop_id}', which is not an SOP", "opensop.yaml"))
 
     for agent in ws.agents.values():
         path = _agent_path(agent.id)

@@ -1,13 +1,13 @@
-"""sopkit command line.
+"""opensop command line.
 
-    sopkit validate [ROOT]
-    sopkit render   [ROOT] [--out DIR] [--check]
-    sopkit plan     [ROOT] [--against REF]
-    sopkit overlap  DIR                         what several original prompts share
-    sopkit compare  [ROOT] --originals DIR      does each rendered prompt still say everything?
-    sopkit check    [ROOT] [--json]             duplicates and mechanical conflicts
-    sopkit skills install [--dir DIR]
-    sopkit guide
+    opensop validate [ROOT]
+    opensop render   [ROOT] [--out DIR] [--check]
+    opensop plan     [ROOT] [--against REF]
+    opensop overlap  DIR                         what several original prompts share
+    opensop compare  [ROOT] --originals DIR      does each rendered prompt still say everything?
+    opensop check    [ROOT] [--json]             duplicates and mechanical conflicts
+    opensop skills install [--dir DIR]
+    opensop guide
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from pathlib import Path
 
 from . import analyze
 from .build import write_build
-from .issues import Issue, SopkitError
+from .issues import Issue, OpenSOPError
 from .loader import load_workspace, load_workspace_files
 from .plan import make_plan, read_snapshot, snapshot
 from .render import render_workspace
@@ -34,7 +34,7 @@ class GitError(Exception):
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="sopkit", description="Modular, git-versioned instructions for task-driven agents.")
+    parser = argparse.ArgumentParser(prog="opensop", description="Modular, git-versioned instructions for task-driven agents.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("validate", help="check the files and print problems")
@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("root", nargs="?", default=".")
     p.add_argument("--json", action="store_true")
 
-    p = sub.add_parser("skills", help="install the sopkit skills for coding agents")
+    p = sub.add_parser("skills", help="install the opensop skills for coding agents")
     p.add_argument("action", choices=["install"])
     p.add_argument("--dir", default=".claude/skills", help="where to install (default: .claude/skills)")
 
@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return {"validate": _validate, "render": _render, "plan": _plan, "guide": _guide,
         "overlap": _overlap, "compare": _compare, "check": _check, "skills": _skills}[args.command](args)
-    except SopkitError as e:
+    except OpenSOPError as e:
         for issue in e.issues:
             print(issue, file=sys.stderr)
         return 1
@@ -100,7 +100,7 @@ def _render(args) -> int:
         if plan.empty:
             print(f"{out} is up to date")
             return 0
-        print(f"{out} is out of date; run `sopkit render`\n", file=sys.stderr)
+        print(f"{out} is out of date; run `opensop render`\n", file=sys.stderr)
         print(plan.text(diffs=False), file=sys.stderr)
         return 1
     written = write_build(build, out)
@@ -123,7 +123,7 @@ def _plan(args) -> int:
 def _read_prompts(folder: str) -> dict[str, str]:
     paths = sorted(p for p in Path(folder).iterdir() if p.suffix in (".md", ".txt") and p.is_file())
     if not paths:
-        raise SopkitError([Issue("no_prompts", f"no .md or .txt files in {folder}")])
+        raise OpenSOPError([Issue("no_prompts", f"no .md or .txt files in {folder}")])
     return {p.stem: p.read_text() for p in paths}
 
 
@@ -159,7 +159,7 @@ def _skills(args) -> int:
 
 
 def _resource_dir(name: str) -> Path:
-    packaged = Path(str(importlib.resources.files("sopkit"))) / name
+    packaged = Path(str(importlib.resources.files("opensop"))) / name
     return packaged if packaged.is_dir() else Path(__file__).resolve().parents[2] / name  # source checkout
 
 
@@ -169,14 +169,14 @@ def _guide(args) -> int:
 
 
 def read_guide() -> str:
-    packaged = importlib.resources.files("sopkit") / "FORMAT.md"
+    packaged = importlib.resources.files("opensop") / "FORMAT.md"
     if packaged.is_file():
         return packaged.read_text()
     return (Path(__file__).resolve().parents[2] / "FORMAT.md").read_text()  # source checkout
 
 
 def files_at_ref(root: Path, ref: str) -> dict[str, str]:
-    """The sopkit source files under ROOT as they were at a git ref."""
+    """The opensop source files under ROOT as they were at a git ref."""
     root = root.resolve()
     top = Path(_git(root, "rev-parse", "--show-toplevel").strip())
     prefix = root.relative_to(top).as_posix()
@@ -191,7 +191,7 @@ def files_at_ref(root: Path, ref: str) -> dict[str, str]:
 
 def _is_source(rel: str) -> bool:
     folder, _, name = rel.rpartition("/")
-    return rel == "sopkit.yaml" or (folder == "bases" and name.endswith(".md")) or (
+    return rel == "opensop.yaml" or (folder == "bases" and name.endswith(".md")) or (
         folder in ("procedures", "agents") and name.endswith(".yaml")
     )
 

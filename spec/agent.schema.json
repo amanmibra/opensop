@@ -3,7 +3,7 @@
   "description": "One voice agent, identified by its platform's own id. Written as agents/<id>.yaml.",
   "properties": {
     "id": {
-      "description": "Alias used everywhere else in sopkit: the file name without .yaml. Set automatically.",
+      "description": "Alias used everywhere else in opensop: the file name without .yaml. Set automatically.",
       "title": "Id",
       "type": "string"
     },
@@ -66,7 +66,7 @@
       "additionalProperties": {
         "type": "string"
       },
-      "description": "Values for {{name}} placeholders. Override the defaults in sopkit.yaml.",
+      "description": "Values for {{name}} placeholders. Override the defaults in opensop.yaml.",
       "title": "Variables",
       "type": "object"
     },
@@ -77,6 +77,6 @@
       "type": "string"
     }
   },
-  "title": "sopkit agent: agents/<id>.yaml",
+  "title": "OpenSOP agent: agents/<id>.yaml",
   "type": "object"
 }

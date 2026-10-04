@@ -1,6 +1,6 @@
-# yaml-language-server: $schema=../../../spec/sopkit.schema.json
+# yaml-language-server: $schema=../../../spec/opensop.schema.json
 #
-# sopkit.yaml marks the root of a sopkit folder. Every field is optional.
+# opensop.yaml marks the root of a opensop folder. Every field is optional.
 
 version: 1
 

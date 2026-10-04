@@ -92,8 +92,8 @@ class Plan:
 
     def markdown(self) -> str:
         if self.empty:
-            return "**sopkit plan:** no agent prompts change."
-        out = [f"**sopkit plan:** {_count([c.agent_id for c in self.changes])} change", ""]
+            return "**opensop plan:** no agent prompts change."
+        out = [f"**opensop plan:** {_count([c.agent_id for c in self.changes])} change", ""]
         out += [f"- {line}" for line in self.summary()]
         for change in self.changes:
             out += ["", f"<details><summary>{change.agent_id} ({change.status})</summary>", "", "```diff", change.diff.rstrip(), "```", "</details>"]
@@ -136,7 +136,7 @@ def make_plan(before: Snapshot, after: Snapshot) -> Plan:
         )
     for change in changes:
         if change.status == "changed" and not change.blocks:
-            change.blocks["workspace:sopkit.yaml"] = "edited"  # e.g. a default variable changed
+            change.blocks["workspace:opensop.yaml"] = "edited"  # e.g. a default variable changed
     return Plan(changes)
 
 

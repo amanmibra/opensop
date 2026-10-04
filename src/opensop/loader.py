@@ -1,7 +1,7 @@
-"""Read a sopkit folder into a Workspace, from disk or from an in-memory file map.
+"""Read a opensop folder into a Workspace, from disk or from an in-memory file map.
 
 Layout:
-    sopkit.yaml
+    opensop.yaml
     bases/<id>.md          front matter + prompt text
     procedures/<id>.yaml
     agents/<id>.yaml
@@ -16,14 +16,14 @@ from typing import Any, Mapping
 import yaml
 from pydantic import ValidationError
 
-from .issues import Issue, SopkitError
+from .issues import Issue, OpenSOPError
 from .models import SOP, Agent, Base, Workspace, WorkspaceConfig
 
-SOURCE_GLOBS = ("sopkit.yaml", "bases/*.md", "procedures/*.yaml", "agents/*.yaml")
+SOURCE_GLOBS = ("opensop.yaml", "bases/*.md", "procedures/*.yaml", "agents/*.yaml")
 
 
 def read_files(root: str | Path) -> dict[str, str]:
-    """The source files of a sopkit folder, keyed by path relative to the root."""
+    """The source files of a opensop folder, keyed by path relative to the root."""
     root = Path(root)
     return {
         path.relative_to(root).as_posix(): path.read_text()
@@ -39,10 +39,10 @@ def load_workspace(root: str | Path) -> Workspace:
 def load_workspace_files(files: Mapping[str, str]) -> Workspace:
     issues: list[Issue] = []
 
-    if "sopkit.yaml" not in files:
-        raise SopkitError([Issue("missing_config", "sopkit.yaml not found")])
-    config_data = _load_yaml(files["sopkit.yaml"], "sopkit.yaml", issues)
-    config = _parse(WorkspaceConfig, config_data, "sopkit.yaml", issues) if config_data is not None else None
+    if "opensop.yaml" not in files:
+        raise OpenSOPError([Issue("missing_config", "opensop.yaml not found")])
+    config_data = _load_yaml(files["opensop.yaml"], "opensop.yaml", issues)
+    config = _parse(WorkspaceConfig, config_data, "opensop.yaml", issues) if config_data is not None else None
 
     bases: dict[str, Base] = {}
     for path in _matching(files, "bases", ".md"):
@@ -70,7 +70,7 @@ def load_workspace_files(files: Mapping[str, str]) -> Workspace:
             agents[agent.id] = agent
 
     if issues:
-        raise SopkitError(issues)
+        raise OpenSOPError(issues)
     return Workspace(config=config, bases=bases, sops=sops, agents=agents)
 
 

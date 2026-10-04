@@ -1,5 +1,5 @@
 from .build import write_build
-from .issues import Issue, SopkitError
+from .issues import Issue, OpenSOPError
 from .loader import load_workspace
 from .models import SOP, Agent, Base, Step, Workspace, WorkspaceConfig
 from .render import Build, RenderedAgent, render_agent, render_workspace
@@ -12,7 +12,7 @@ __all__ = [
     "Build",
     "Issue",
     "RenderedAgent",
-    "SopkitError",
+    "OpenSOPError",
     "Step",
     "Workspace",
     "WorkspaceConfig",

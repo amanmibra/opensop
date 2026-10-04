@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-import sopkit
-from sopkit.cli import main
-from sopkit.plan import make_plan, read_snapshot, snapshot
+import opensop
+from opensop.cli import main
+from opensop.plan import make_plan, read_snapshot, snapshot
 
 FIXTURE = Path(__file__).parent / "fixtures" / "restaurants" / "sops"
 
@@ -25,7 +25,7 @@ def edit(path: Path, old: str, new: str) -> None:
 
 
 def render(root):
-    return snapshot(sopkit.render_workspace(sopkit.load_workspace(root)))
+    return snapshot(opensop.render_workspace(opensop.load_workspace(root)))
 
 
 # --- plan ---------------------------------------------------------------------
@@ -57,9 +57,9 @@ def test_plan_reports_targeting_changes(repo):
 
 def test_plan_attributes_default_variable_changes_to_workspace(repo):
     before = render(repo)
-    edit(repo / "sopkit.yaml", "the manager on duty", "the shift lead")
+    edit(repo / "opensop.yaml", "the manager on duty", "the shift lead")
     plan = make_plan(before, render(repo))
-    assert plan.by_block() == {("workspace:sopkit.yaml", "edited"): ["luigis-trattoria", "tonys-pizza"]}
+    assert plan.by_block() == {("workspace:opensop.yaml", "edited"): ["luigis-trattoria", "tonys-pizza"]}
 
 
 def test_plan_new_and_removed_agents(repo):
@@ -115,21 +115,21 @@ EXAMPLE = Path(__file__).parents[1] / "examples" / "livekit-restaurant" / "sops"
 
 
 def test_example_is_valid_and_its_build_is_current(capsys):
-    assert sopkit.validate(sopkit.load_workspace(EXAMPLE)) == []
-    assert main(["render", str(EXAMPLE), "--check"]) == 0, "run `sopkit render examples/livekit-restaurant/sops`"
+    assert opensop.validate(opensop.load_workspace(EXAMPLE)) == []
+    assert main(["render", str(EXAMPLE), "--check"]) == 0, "run `opensop render examples/livekit-restaurant/sops`"
 
 
 def test_guide_prints_the_format_reference(capsys):
     assert main(["guide"]) == 0
     out = capsys.readouterr().out
-    assert out.startswith("# The sopkit format")
+    assert out.startswith("# The OpenSOP format")
     assert "Checklist for coding agents" in out
 
 
 def test_format_reference_lists_every_validation_code():
     import re
 
-    codes = set(re.findall(r'Issue\(\s*"([a-z_]+)"', (Path(sopkit.__file__).parent / "validate.py").read_text()))
-    codes |= set(re.findall(r'Issue\(\s*"([a-z_]+)"', (Path(sopkit.__file__).parent / "loader.py").read_text()))
+    codes = set(re.findall(r'Issue\(\s*"([a-z_]+)"', (Path(opensop.__file__).parent / "validate.py").read_text()))
+    codes |= set(re.findall(r'Issue\(\s*"([a-z_]+)"', (Path(opensop.__file__).parent / "loader.py").read_text()))
     guide = (Path(__file__).parents[1] / "FORMAT.md").read_text()
     assert {c for c in codes if f"`{c}`" not in guide} == set()

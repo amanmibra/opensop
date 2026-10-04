@@ -1,15 +1,15 @@
 ---
-name: sopkit-import
-description: Convert existing voice/task agent prompts into sopkit files (shared bases, SOPs, one file per agent), verify nothing was lost, and report conflicts. Asks the user to fill gaps and approve a short import plan before writing files, and again before committing. Use when the user asks to import, migrate, modularize or "sopkit-ify" agent prompts or instructions, or runs /sopkit-import.
+name: opensop-import
+description: Convert existing voice/task agent prompts into OpenSOP files (shared bases, SOPs, one file per agent), verify nothing was lost, and report conflicts. Asks the user to fill gaps and approve a short import plan before writing files, and again before committing. Use when the user asks to import, migrate, modularize or "opensop-ify" agent prompts or instructions, or runs /opensop-import.
 ---
 
-# Import existing prompts into sopkit
+# Import existing prompts into OpenSOP
 
-You are turning a team's hand-written agent prompts into a sopkit folder: shared text written once, procedures as SOPs, and a short file per agent. The rendered prompts must say everything the originals said. You do the judgment; the `sopkit` CLI does the counting and checking; the user makes the decisions.
+You are turning a team's hand-written agent prompts into an OpenSOP folder: shared text written once, procedures as SOPs, and a short file per agent. The rendered prompts must say everything the originals said. You do the judgment; the `opensop` CLI does the counting and checking; the user makes the decisions.
 
 The flow has two approval checkpoints:
 
-1. **Before writing any sopkit file:** the user approves a one-screen import plan.
+1. **Before writing any OpenSOP file:** the user approves a one-screen import plan.
 2. **Before committing or pushing:** the user approves a one-screen result summary.
 
 Never commit, push or open a pull request without the second approval.
@@ -23,13 +23,13 @@ Never commit, push or open a pull request without the second approval.
 
 ## 0. Make sure the CLI works
 
-Run `sopkit --help`. If it's missing, install it:
+Run `opensop --help`. If it's missing, install it:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/amanmibra/sopkit/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | sh
 ```
 
-Then run `sopkit guide` and read the whole format reference before writing any file.
+Then run `opensop guide` and read the whole format reference before writing any file.
 
 ## 1. Collect the originals
 
@@ -44,13 +44,13 @@ For each agent:
 **Ask now (one batch), only what you couldn't find:**
 - Where prompts live, if you couldn't find all of them, and whether any agents should be left out.
 - Platform ids you couldn't find.
-- Where the sopkit folder should go (default: `sops/` at the repo root).
+- Where the OpenSOP folder should go (default: `sops/` at the repo root).
 - Prompts assembled at runtime from data you can't see (e.g. a database): ask for an export or a sample.
 
 ## 2. Find what's shared
 
 ```
-sopkit overlap sops/originals
+opensop overlap sops/originals
 ```
 
 This lists sentences shared by all agents, shared by subsets, near-copies that differ only by a value, and how much is unique to each agent. Use it as the map for the plan.
@@ -95,9 +95,9 @@ What belongs in "Decisions needed":
 - **Unclear classification.** Passages that could be a procedure or plain text.
 - **Contradictions you already see.** Report them, don't resolve them.
 
-## 4. Write the sopkit files
+## 4. Write the OpenSOP files
 
-Create `sops/sopkit.yaml`, `sops/bases/`, `sops/procedures/`, `sops/agents/`, following the approved plan and the format reference.
+Create `sops/opensop.yaml`, `sops/bases/`, `sops/procedures/`, `sops/agents/`, following the approved plan and the format reference.
 
 | Text in the originals | Goes to |
 |---|---|
@@ -131,9 +131,9 @@ If something comes up that the plan didn't cover and that changes what an agent 
 ## 5. Validate, render, compare. Repeat until clean.
 
 ```
-sopkit validate sops
-sopkit render sops
-sopkit compare sops --originals sops/originals
+opensop validate sops
+opensop render sops
+opensop compare sops --originals sops/originals
 ```
 
 `compare` fails if any sentence from an original is **missing** or **changed** in the rendered prompt, and shows the changed words. Fix those; they're lost or altered instructions. **Reworded** lines (most words present, e.g. one sentence split into steps) don't fail; check each one says the same thing. **Added** lines should only be SOP headings and approved goals. Repeat until every agent passes.
@@ -141,7 +141,7 @@ sopkit compare sops --originals sops/originals
 ## 6. Check for conflicts
 
 ```
-sopkit check sops
+opensop check sops
 ```
 
 This finds duplicated sentences, the same sentence with different numbers, "do X" vs "never X", near-identical sentences that drifted, and unused variables. Then read each rendered prompt in `sops/build/` yourself for contradictions the CLI can't see (e.g. one block offers delivery while the agent says pickup only).
@@ -163,14 +163,14 @@ Conflicts to decide later (unchanged from today's behavior)
   1. upsell: "once" (29 agents) vs "twice" (luigis-trattoria), kept as a variable
   2. tonys-pizza says "pickup only after 10pm"; pizza-context says delivery until 11pm
 
-Files: sops/sopkit.yaml, sops/bases/ (5), sops/procedures/ (4), sops/agents/ (30), sops/build/ (generated)
+Files: sops/opensop.yaml, sops/bases/ (5), sops/procedures/ (4), sops/agents/ (30), sops/build/ (generated)
 Not included: sops/originals/ (your old prompts, for reference; delete or add to .gitignore)
 
-Commit these on a new branch and open a PR? (default: commit on branch sopkit-import, don't push)
+Commit these on a new branch and open a PR? (default: commit on branch opensop-import, don't push)
 ```
 
 Only commit, push or open a PR after the user says so, and only as far as they said (commit only, push, or PR). Don't include `sops/originals/` unless asked.
 
 Then list the next steps:
 - Load each agent's prompt from `sops/build/<id>.prompt.md` in the agent code instead of the hard-coded string.
-- Before future edits, run `sopkit plan sops --against main` to see which agents a change reaches.
+- Before future edits, run `opensop plan sops --against main` to see which agents a change reaches.

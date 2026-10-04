@@ -157,6 +157,6 @@
   "required": [
     "name"
   ],
-  "title": "sopkit SOP: procedures/<id>.yaml",
+  "title": "OpenSOP SOP: procedures/<id>.yaml",
   "type": "object"
 }

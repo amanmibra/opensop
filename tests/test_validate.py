@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-import sopkit
+import opensop
 
 FIXTURE = Path(__file__).parent / "fixtures" / "restaurants" / "sops"
 
@@ -22,13 +22,13 @@ def edit(path: Path, old: str, new: str) -> None:
 
 
 def codes(repo: Path) -> list[str]:
-    with pytest.raises(sopkit.SopkitError) as exc:
-        sopkit.render_workspace(sopkit.load_workspace(repo))
+    with pytest.raises(opensop.OpenSOPError) as exc:
+        opensop.render_workspace(opensop.load_workspace(repo))
     return [i.code for i in exc.value.issues]
 
 
 def test_fixture_is_valid():
-    assert sopkit.validate(sopkit.load_workspace(FIXTURE)) == []
+    assert opensop.validate(opensop.load_workspace(FIXTURE)) == []
 
 
 def test_locked_base_cannot_be_excluded(repo):
@@ -38,7 +38,7 @@ def test_locked_base_cannot_be_excluded(repo):
 
 def test_unlocked_base_can_be_excluded(repo):
     edit(repo / "agents" / "sakura-sushi.yaml", "exclude: [delivery-handling]", "exclude: [delivery-handling, closing]")
-    build = sopkit.render_workspace(sopkit.load_workspace(repo))
+    build = opensop.render_workspace(opensop.load_workspace(repo))
     assert "closing" not in [b.id for b in build.agents["sakura-sushi"].bases]
 
 
@@ -59,7 +59,7 @@ def test_unknown_agent_in_targeting(repo):
 
 def test_platform_ref_can_be_used_in_targeting(repo):
     edit(repo / "procedures" / "reservations.yaml", "[sakura-sushi, luigis-trattoria]", '[sakura-sushi, "livekit:tonys-pizza"]')
-    build = sopkit.render_workspace(sopkit.load_workspace(repo))
+    build = opensop.render_workspace(opensop.load_workspace(repo))
     assert "Reservations" in build.agents["tonys-pizza"].prompt
     assert "Reservations" not in build.agents["luigis-trattoria"].prompt
 
@@ -76,35 +76,35 @@ def test_duplicate_platform_ref(repo):
 
 def test_agent_needs_exactly_one_platform(repo):
     edit(repo / "agents" / "sakura-sushi.yaml", "livekit: sakura-sushi", "livekit: sakura-sushi\nvapi: asst_123")
-    with pytest.raises(sopkit.SopkitError) as exc:
-        sopkit.load_workspace(repo)
+    with pytest.raises(opensop.OpenSOPError) as exc:
+        opensop.load_workspace(repo)
     assert [i.code for i in exc.value.issues] == ["invalid_field"]
     assert exc.value.issues[0].path == "agents/sakura-sushi.yaml"
 
 
 def test_explicit_id_must_match_file_name(repo):
     edit(repo / "procedures" / "reservations.yaml", "name: Reservations", "id: bookings\nname: Reservations")
-    with pytest.raises(sopkit.SopkitError) as exc:
-        sopkit.load_workspace(repo)
+    with pytest.raises(opensop.OpenSOPError) as exc:
+        opensop.load_workspace(repo)
     assert [i.code for i in exc.value.issues] == ["id_mismatch"]
 
 
 def test_unknown_field_is_rejected(repo):
     edit(repo / "procedures" / "reservations.yaml", "name: Reservations", "name: Reservations\nsteps: []")
-    with pytest.raises(sopkit.SopkitError) as exc:
-        sopkit.load_workspace(repo)
+    with pytest.raises(opensop.OpenSOPError) as exc:
+        opensop.load_workspace(repo)
     assert [i.code for i in exc.value.issues] == ["invalid_field"]
 
 
 def test_missing_goal_is_a_warning(repo):
     edit(repo / "procedures" / "reservations.yaml", "description: The customer has a confirmed table, or knows exactly why one isn't available.\n", "")
-    build = sopkit.render_workspace(sopkit.load_workspace(repo))
+    build = opensop.render_workspace(opensop.load_workspace(repo))
     assert [(w.code, w.severity) for w in build.warnings] == [("missing_goal", "warning")]
 
 
-def load_codes(repo: Path) -> list[sopkit.Issue]:
-    with pytest.raises(sopkit.SopkitError) as exc:
-        sopkit.load_workspace(repo)
+def load_codes(repo: Path) -> list[opensop.Issue]:
+    with pytest.raises(opensop.OpenSOPError) as exc:
+        opensop.load_workspace(repo)
     return exc.value.issues
 
 
@@ -119,7 +119,7 @@ def test_colon_in_step_gets_a_clear_fix(repo):
 
 def test_quoted_colon_step_is_fine(repo):
     edit(repo / "procedures" / "reservations.yaml", "  - Never double-book a table", '  - "Never say: fully booked"')
-    build = sopkit.render_workspace(sopkit.load_workspace(repo))
+    build = opensop.render_workspace(opensop.load_workspace(repo))
     assert "- Never say: fully booked" in build.agents["sakura-sushi"].prompt
 
 
