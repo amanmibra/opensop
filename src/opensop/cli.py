@@ -4,6 +4,7 @@
     opensop render   [ROOT] [--out DIR] [--check]
     opensop plan     [ROOT] [--against REF] [--json]
     opensop agents   [ROOT] [--json]
+    opensop affected [ROOT] [--against REF] [--agents IDS] [--all-if-none] [--format F] [--ci]
     opensop overlap  DIR                         what several original prompts share
     opensop compare  [ROOT] --originals DIR      does each rendered prompt still say everything?
     opensop check    [ROOT] [--json]             duplicates and mechanical conflicts
@@ -16,12 +17,14 @@ from __future__ import annotations
 import argparse
 import importlib.resources
 import json
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from . import analyze
+from .affected import affected
 from .build import write_build
 from .issues import Issue, OpenSOPError
 from .loader import load_workspace, load_workspace_files
@@ -51,6 +54,19 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--against", metavar="REF", help="git ref to compare with (default: the committed build/ folder)")
     p.add_argument("--summary", action="store_true", help="omit the diffs")
     p.add_argument("--json", action="store_true", help="machine-readable output (for CI)")
+
+    p = sub.add_parser("affected", help="which agents a change affects (for tests and CI)")
+    p.add_argument("root", nargs="?", default=".")
+    p.add_argument("--against", metavar="REF", help="git ref to compare with; agents whose prompt changed are selected")
+    p.add_argument("--agents", default="", help="select these agents instead (OpenSOP ids or platform ids, space or comma separated)")
+    p.add_argument("--all-if-none", action="store_true", help="select every agent when nothing else is selected")
+    p.add_argument(
+        "--format",
+        choices=["ids", "platform-ids", "json"],
+        default="ids",
+        help="ids: OpenSOP ids (file names); platform-ids: the platform's own ids; json: everything",
+    )
+    p.add_argument("--ci", action="store_true", help="also write GitHub Actions outputs and a step summary")
 
     p = sub.add_parser("agents", help="list agents with their platform ids, SOPs and tools")
     p.add_argument("root", nargs="?", default=".")
@@ -82,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return {"validate": _validate, "render": _render, "plan": _plan, "guide": _guide,
-        "agents": _agents, "overlap": _overlap, "compare": _compare, "check": _check, "skills": _skills}[args.command](args)
+        "agents": _agents, "affected": _affected, "overlap": _overlap, "compare": _compare, "check": _check, "skills": _skills}[args.command](args)
     except OpenSOPError as e:
         for issue in e.issues:
             print(issue, file=sys.stderr)
@@ -136,6 +152,45 @@ def _plan(args) -> int:
     return 0
 
 
+def _affected(args) -> int:
+    root = Path(args.root)
+    head = render_workspace(load_workspace(root))
+    base = None
+    if args.against:
+        files = files_at_ref(root, args.against)
+        base = render_workspace(load_workspace_files(files)) if files else None
+        if base is None:
+            print(f"no OpenSOP files at {args.against}; treating every agent as new", file=sys.stderr)
+    requested = args.agents.replace(",", " ").split()
+    # Without a base to compare with, every agent is selected (unless specific ones were requested).
+    result = affected(head, base, requested, all_if_none=args.all_if_none)
+
+    if args.format == "json":
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        field = {"ids": "id", "platform-ids": "platform_id"}[args.format]
+        for agent in result.agents:
+            print(getattr(agent, field))
+    if args.ci:
+        _write_github(result)
+    return 0
+
+
+def _write_github(result) -> None:
+    """Write outputs for later steps and a summary for the run page (no-ops outside GitHub Actions)."""
+    outputs = result.github_outputs()
+    if path := os.environ.get("GITHUB_OUTPUT"):
+        with open(path, "a") as f:
+            f.writelines(f"{k}={v}\n" for k, v in outputs.items())
+    else:
+        print("\n# GITHUB_OUTPUT not set; these would be written:", file=sys.stderr)
+        for k, v in outputs.items():
+            print(f"#   {k}={v}", file=sys.stderr)
+    if path := os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(path, "a") as f:
+            f.write(result.markdown())
+
+
 def _agents(args) -> int:
     build = render_workspace(load_workspace(args.root))
     agents = [
@@ -155,7 +210,7 @@ def _agents(args) -> int:
         print(json.dumps(agents, indent=2))
     else:
         for a in agents:
-            print(f"{a['id']:24} {a['platform_ref']:32} sops: {', '.join(a['sops']) or '-'}")
+            print(f"{a['id']:24} {a['platform']:11} {a['platform_id']:28} sops: {', '.join(a['sops']) or '-'}")
     return 0
 
 

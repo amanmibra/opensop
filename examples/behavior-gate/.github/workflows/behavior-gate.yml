@@ -2,8 +2,8 @@
 #
 # Copy to .github/workflows/ in your repo, then fill in the "Run your tests" step.
 #
-#   job `detect`  works out which agents to test:
-#                   - the agents whose built prompt changed in this PR (`opensop plan --json`)
+#   job `detect`  `opensop affected` works out which agents to test:
+#                   - the agents whose built prompt changed in this PR
 #                   - or, if none changed (e.g. only test files changed) or the run was started
 #                     by hand with no agents given: every agent
 #   job `test`    runs your command once, with the agent ids in environment variables
@@ -22,24 +22,23 @@ on:
   workflow_dispatch:
     inputs:
       agents:
-        description: "Agent ids to test, space-separated (blank = all agents)"
+        description: "Agents to test: OpenSOP ids or platform ids, space-separated (blank = all)"
         required: false
         default: ""
 
 env:
   OPENSOP_ROOT: sops
-  OPENSOP_VERSION: v0.0.2
+  OPENSOP_VERSION: v0.0.3
 
 jobs:
   detect:
     runs-on: ubuntu-latest
     outputs:
-      ids: ${{ steps.agents.outputs.ids }}            # "tonys-pizza sakura-sushi"
-      refs: ${{ steps.agents.outputs.refs }}          # "livekit:tonys-pizza livekit:sakura-sushi"
-      platform_ids: ${{ steps.agents.outputs.platform_ids }}  # "tonys-pizza sakura-sushi" (the platform's own ids)
-      matrix: ${{ steps.agents.outputs.matrix }}      # JSON list of {id, platform_ref, platform, platform_id}
+      ids: ${{ steps.agents.outputs.ids }}                    # OpenSOP ids: "tonys-pizza sakura-sushi"
+      platform_ids: ${{ steps.agents.outputs.platform_ids }}  # the platform's own ids: "tonys-pizza asst_9f3e"
+      matrix: ${{ steps.agents.outputs.matrix }}              # JSON list, one object per agent (see README)
       count: ${{ steps.agents.outputs.count }}
-      all: ${{ steps.agents.outputs.all }}            # "true" when testing every agent
+      all: ${{ steps.agents.outputs.all }}                    # "true" when testing every agent
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,64 +52,19 @@ jobs:
       - name: Work out which agents to test
         id: agents
         env:
-          BASE_REF: ${{ github.base_ref }}
+          AGAINST: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
           REQUESTED: ${{ inputs.agents }}
-        run: |
-          set -euo pipefail
-          opensop agents "$OPENSOP_ROOT" --json > all-agents.json
-
-          if [ -n "${REQUESTED:-}" ]; then
-            # Started by hand with specific agents.
-            ids="$REQUESTED"
-          elif [ -n "${BASE_REF:-}" ]; then
-            # Pull request: agents whose built prompt changed (removed agents are skipped).
-            opensop plan "$OPENSOP_ROOT" --against "origin/$BASE_REF" --json > plan.json
-            ids=$(jq -r '[.changes[] | select(.status != "removed") | .agent] | join(" ")' plan.json)
-          else
-            ids=""
-          fi
-
-          all=false
-          if [ -z "$ids" ]; then
-            # Nothing specific to test: run every agent.
-            ids=$(jq -r 'map(.id) | join(" ")' all-agents.json)
-            all=true
-          fi
-
-          unknown=$(jq -r --arg ids "$ids" '($ids | split(" ") | map(select(. != ""))) - map(.id) | join(" ")' all-agents.json)
-          if [ -n "$unknown" ]; then
-            echo "::error::Unknown agent id(s): $unknown. Known: $(jq -r 'map(.id) | join(" ")' all-agents.json)"
-            exit 1
-          fi
-
-          # Look up each id's platform details, so tests can use whichever id they need.
-          jq -c --arg ids "$ids" '($ids | split(" ")) as $want | map(select(.id as $i | $want | index($i)))
-                | map({id, platform_ref, platform, platform_id})' all-agents.json > selected.json
-          {
-            echo "ids=$(jq -r 'map(.id) | join(" ")' selected.json)"
-            echo "refs=$(jq -r 'map(.platform_ref) | join(" ")' selected.json)"
-            echo "platform_ids=$(jq -r 'map(.platform_id) | join(" ")' selected.json)"
-            echo "matrix=$(cat selected.json)"
-            echo "count=$(jq length selected.json)"
-            echo "all=$all"
-          } >> "$GITHUB_OUTPUT"
-
-          {
-            echo "### Agents to test ($( [ "$all" = true ] && echo "all" || echo "changed in this PR"))"
-            jq -r '.[] | "- `\(.id)` (\(.platform_ref))"' selected.json
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: opensop affected "$OPENSOP_ROOT" ${AGAINST:+--against "$AGAINST"} --agents "$REQUESTED" --all-if-none --ci
 
   test:
     needs: detect
     if: needs.detect.outputs.count != '0'
     runs-on: ubuntu-latest
     env:
-      # Pick whichever form your tests take:
-      AGENT_IDS: ${{ needs.detect.outputs.ids }}                  # OpenSOP ids: "tonys-pizza sakura-sushi"
-      AGENT_REFS: ${{ needs.detect.outputs.refs }}                # "livekit:tonys-pizza livekit:sakura-sushi"
-      AGENT_PLATFORM_IDS: ${{ needs.detect.outputs.platform_ids }} # the platform's own ids
-      AGENTS_JSON: ${{ needs.detect.outputs.matrix }}             # full details as JSON
-      ALL_AGENTS: ${{ needs.detect.outputs.all }}                 # "true" if testing every agent
+      AGENT_IDS: ${{ needs.detect.outputs.ids }}                   # OpenSOP ids (file names in agents/)
+      AGENT_PLATFORM_IDS: ${{ needs.detect.outputs.platform_ids }} # LiveKit agent_name, Vapi assistant id, ...
+      AGENTS_JSON: ${{ needs.detect.outputs.matrix }}              # per agent: ids, platform, changed SOPs, all SOPs
+      ALL_AGENTS: ${{ needs.detect.outputs.all }}                  # "true" if testing every agent
     steps:
       - uses: actions/checkout@v4
 
@@ -125,8 +79,8 @@ jobs:
           # ↓ Replace with your command. Examples:
           #   npm run test:agents -- --agents "$AGENT_IDS"
           #   pytest tests/agents -k "$(echo $AGENT_IDS | sed 's/ / or /g')"
-          #   python evals/run_evals.py --base origin/${{ github.base_ref }}   (see examples/braintrust-evals)
-          #   for id in $AGENT_IDS; do ./scripts/test-agent.sh "$id"; done
+          #   for id in $AGENT_PLATFORM_IDS; do ./scripts/simulate.sh "$id"; done
+          #   echo "$AGENTS_JSON" | jq -r '.[] | "\(.id) \(.changed_sops | join(","))"'   # only the SOPs that changed
           echo "No test command configured yet" && exit 1
 
   # Optional: one job per agent, in parallel. Each sees its own agent in matrix.agent.
@@ -141,4 +95,4 @@ jobs:
   #   name: test ${{ matrix.agent.id }}
   #   steps:
   #     - uses: actions/checkout@v4
-  #     - run: ./scripts/test-agent.sh "${{ matrix.agent.id }}"   # or matrix.agent.platform_id
+  #     - run: ./scripts/test-agent.sh "${{ matrix.agent.platform_id }}" "${{ join(matrix.agent.changed_sops, ',') }}"

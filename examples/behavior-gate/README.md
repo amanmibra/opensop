@@ -10,24 +10,37 @@ A GitHub Action that works out **which agents a pull request changes** and hands
 
 | Situation | Agents tested |
 |---|---|
-| PR changes SOP files | The agents whose built prompt changed (`opensop plan --json` against the base branch) |
+| PR changes SOP files | The agents whose built prompt changed, compared with the base branch |
 | PR changes only tests, or SOP edits that don't change any prompt | All agents |
-| Started by hand with `agents: "la-casita"` | Those agents (unknown ids fail the run) |
+| Started by hand with `agents: "la-casita asst_9f3e"` | Those agents, by OpenSOP id or platform id (unknown ids fail the run) |
 | Started by hand with no agents | All agents |
 
 Agents removed in the PR are skipped. A shared change reaches only the agents that use it: editing the English brand voice in the [restaurant example](../livekit-restaurant) tests three agents and skips `la-casita`, which uses the Spanish one.
 
 ## What your command gets
 
-The `test` job sets these, so your command can take ids in whatever form it needs:
+The detect job is one command, `opensop affected ... --all-if-none --ci`, and the `test` job passes its results to your command:
 
 | Variable | Example |
 |---|---|
-| `AGENT_IDS` | `tonys-pizza sakura-sushi` (OpenSOP ids: file names in `agents/`) |
-| `AGENT_REFS` | `livekit:tonys-pizza livekit:sakura-sushi` |
-| `AGENT_PLATFORM_IDS` | the platform's own ids (LiveKit `agent_name`, Vapi assistant id, ElevenLabs `agent_id`) |
-| `AGENTS_JSON` | `[{"id": "tonys-pizza", "platform_ref": "livekit:tonys-pizza", "platform": "livekit", "platform_id": "tonys-pizza"}, ...]` |
+| `AGENT_IDS` | `tonys-pizza sakura-sushi` (OpenSOP ids: the file names in `agents/`) |
+| `AGENT_PLATFORM_IDS` | `tonys-pizza asst_9f3e` (each agent's own id on its platform: LiveKit `agent_name`, Vapi assistant id, ElevenLabs `agent_id`) |
+| `AGENTS_JSON` | one object per agent (main fields below) |
 | `ALL_AGENTS` | `true` when testing every agent |
+
+```json
+{
+  "id": "tonys-pizza",
+  "platform": "livekit",
+  "platform_id": "tonys-pizza",
+  "reason": "changed",
+  "changed": ["sop:allergen-check"],
+  "changed_sops": ["allergen-check"],
+  "sops": ["allergen-check", "delivery-handling", "large-orders"]
+}
+```
+
+`changed_sops` lets a test suite go one level finer: run only the cases for the SOPs that changed, not every case for the agent.
 
 Fill in the one step:
 
@@ -53,9 +66,11 @@ To test agents in parallel instead, uncomment the `test-each` job: it runs once 
 3. Replace the placeholder in **Run your tests** with your command (it fails on purpose until you do).
 4. Make the **behavior-gate / test** check required in your branch protection rules, so failing tests block the merge.
 
-The ids come from `opensop plan --json` and `opensop agents --json`, which you can also call from your own scripts:
+The same command works outside GitHub Actions:
 
 ```sh
-opensop plan sops --against origin/main --json | jq -r '.changes[] | select(.status != "removed") | .agent'
-opensop agents sops --json | jq -r '.[] | "\(.id) \(.platform_ref)"'
+opensop affected sops --against origin/main                        # OpenSOP ids, one per line
+opensop affected sops --against origin/main --format platform-ids  # the platforms' own ids
+opensop affected sops --against origin/main --format json          # everything, including changed SOPs
+opensop affected sops --agents "asst_9f3e la-casita"               # specific agents (either kind of id)
 ```

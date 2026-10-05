@@ -106,6 +106,7 @@ $ opensop plan sops --against main
 | `opensop render sops` | Build one full prompt per agent into `sops/build/` |
 | `opensop plan sops --against main` | Which agents a change touches, and why, with diffs (`--json` for CI) |
 | `opensop agents sops` | List agents with their platform ids, SOPs and tools (`--json` for CI) |
+| `opensop affected sops --against main` | Which agents to test for a change, with the SOPs that changed (`--ci` for GitHub Actions) |
 | `opensop check sops` | Duplicated text and conflicting instructions |
 | `opensop overlap <dir>` | What a set of existing prompts have in common |
 | `opensop compare sops --originals <dir>` | Confirm built prompts still say everything the originals did |
