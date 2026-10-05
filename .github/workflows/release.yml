@@ -1,7 +1,7 @@
 name: release
 
 # Builds opensop binaries for macOS, Linux and Windows (amd64 and arm64) and attaches them
-# to a draft GitHub Release. Triggered by pushing a tag like v0.1.0.
+# to a draft GitHub Release. Triggered by pushing a tag like v0.0.4.
 on:
   push:
     tags: ["v*"]

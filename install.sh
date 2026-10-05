@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | sh
 #
 # Options (environment variables):
-#   OPENSOP_REF=<tag>           install a specific release, e.g. v0.1.0 (default: the latest release)
+#   OPENSOP_REF=<tag>           install a specific release, e.g. v0.0.4 (default: the latest release)
 #   OPENSOP_INSTALL_DIR=<dir>   where to put the binary (default: ~/.local/bin)
 #
 # To build from a branch or commit instead, use Go: go install github.com/amanmibra/opensop/cmd/opensop@<ref>
@@ -43,7 +43,7 @@ ASSET="opensop_${OS}_${ARCH}.${EXT}"
 case "$REF" in
   latest | v[0-9]*) ;;
   [0-9]*) REF="v$REF" ;;
-  *) fail "OPENSOP_REF must be a release tag like v0.1.0 (got '$REF'). To build a branch or commit: go install github.com/$REPO/cmd/opensop@$REF" ;;
+  *) fail "OPENSOP_REF must be a release tag like v0.0.4 (got '$REF'). To build a branch or commit: go install github.com/$REPO/cmd/opensop@$REF" ;;
 esac
 
 if [ -n "$RELEASES_URL" ]; then

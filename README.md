@@ -29,7 +29,7 @@ OpenSOP keeps the shared parts in one place, in git, and builds every agent's pr
 curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | sh
 ```
 
-Installs a single `opensop` binary into `~/.local/bin` (macOS, Linux, Windows; amd64 and arm64). Pin a version with `OPENSOP_REF=v0.1.0`, or pick the folder with `OPENSOP_INSTALL_DIR`. With Go: `go install github.com/amanmibra/opensop/cmd/opensop@latest`
+Installs a single `opensop` binary into `~/.local/bin` (macOS, Linux, Windows; amd64 and arm64). Pin a version with `OPENSOP_REF=v0.0.4`, or pick the folder with `OPENSOP_INSTALL_DIR`. With Go: `go install github.com/amanmibra/opensop/cmd/opensop@latest`
 
 **2. Import your existing prompts** with your coding agent
 
