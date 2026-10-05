@@ -114,6 +114,8 @@ forbiddenActions:
 
 For long text, a `|` block avoids quoting entirely.
 
+**YAML version.** Files are read as YAML 1.2. Unquoted `yes`, `no`, `on`, `off`, times like `1:30` and dates are plain text. Only bare numbers (`- 10`) and `true`/`false` are read as something other than text, so quote a step that is just a number or a boolean. Duplicate keys in one mapping are an error. Boolean fields (`locked`, `required`) take `true` or `false`; `yes`/`no` are accepted there too.
+
 **Steps.** Each entry in `procedureSteps`, `forbiddenActions` and `warningSigns` is either a plain string or an object:
 
 ```yaml
@@ -191,9 +193,9 @@ Set exactly one platform field. Elsewhere in OpenSOP, refer to the agent by its 
 | Code | Severity | Meaning |
 |---|---|---|
 | `missing_config` | error | No `opensop.yaml` in the folder. |
-| `invalid_yaml` | error | A file isn't valid YAML, or isn't a mapping. |
+| `invalid_yaml` | error | A file isn't valid YAML (including a key written twice), or isn't a mapping. |
 | `colon_in_step` | error | A step contains `: ` and YAML read it as a key and value. Put the whole step in quotes. |
-| `unquoted_value` | error | A step YAML read as a boolean or number (e.g. `- no`, `- 10`). Put it in quotes. |
+| `unquoted_value` | error | A step YAML read as a number or boolean (`- 10`, `- true`). Put it in quotes. |
 | `empty_step` | error | A list item with nothing after the `-`. |
 | `invalid_field` | error | Unknown field, wrong type, missing `name`, or not exactly one platform. |
 | `id_mismatch` | error | An explicit `id:` differs from the file name. Usually just remove `id:`. |

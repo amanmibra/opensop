@@ -1,7 +1,10 @@
 name: release
 
-# Builds opensop binaries for macOS, Linux and Windows (amd64 and arm64) and attaches them
-# to a draft GitHub Release. Triggered by pushing a tag like v0.0.4.
+# Builds opensop for macOS, Linux and Windows (amd64 and arm64) and attaches the archives to a
+# draft GitHub Release. Triggered by pushing a tag like v0.0.5 (it must match Cargo.toml).
+#
+# Asset names carry no version (opensop_<os>_<arch>.tar.gz, .zip on Windows) so install.sh can
+# use GitHub's releases/latest/download/<name> URL; checksums.txt lists "<sha256>  <name>".
 on:
   push:
     tags: ["v*"]
@@ -10,19 +13,76 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build:
+    name: build ${{ matrix.os }}/${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { os: darwin, arch: amd64, target: x86_64-apple-darwin, runner: macos-latest }
+          - { os: darwin, arch: arm64, target: aarch64-apple-darwin, runner: macos-latest }
+          - { os: linux, arch: amd64, target: x86_64-unknown-linux-musl, runner: ubuntu-latest, cross: true }
+          - { os: linux, arch: arm64, target: aarch64-unknown-linux-musl, runner: ubuntu-latest, cross: true }
+          - { os: windows, arch: amd64, target: x86_64-pc-windows-msvc, runner: windows-latest }
+          - { os: windows, arch: arm64, target: aarch64-pc-windows-msvc, runner: windows-latest }
     steps:
       - uses: actions/checkout@v4
+      - name: Check the tag matches Cargo.toml
+        shell: bash
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME != Cargo.toml version $version"; exit 1; }
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          fetch-depth: 0 # GoReleaser builds the changelog from history
-      - uses: actions/setup-go@v5
+          targets: ${{ matrix.target }}
+      - uses: taiki-e/install-action@v2
+        if: matrix.cross
         with:
-          go-version-file: go.mod
-      - uses: goreleaser/goreleaser-action@v6
+          tool: cross
+      - name: Build
+        shell: bash
+        run: |
+          if [ "${{ matrix.cross }}" = true ]; then
+            cross build --release --locked --target ${{ matrix.target }}
+          else
+            cargo build --release --locked --target ${{ matrix.target }}
+          fi
+      - name: Archive
+        shell: bash
+        run: |
+          name="opensop_${{ matrix.os }}_${{ matrix.arch }}"
+          mkdir -p staging dist
+          cp LICENSE README.md FORMAT.md staging/
+          if [ "${{ matrix.os }}" = windows ]; then
+            cp "target/${{ matrix.target }}/release/opensop.exe" staging/
+            (cd staging && 7z a -tzip "../dist/$name.zip" opensop.exe LICENSE README.md FORMAT.md >/dev/null)
+          else
+            cp "target/${{ matrix.target }}/release/opensop" staging/
+            tar -czf "dist/$name.tar.gz" -C staging opensop LICENSE README.md FORMAT.md
+          fi
+      - uses: actions/upload-artifact@v4
         with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: release --clean
+          name: opensop_${{ matrix.os }}_${{ matrix.arch }}
+          path: dist/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum opensop_* > checksums.txt && cat checksums.txt
+      - name: Draft release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          prerelease=""
+          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+          # Review the notes and assets, then publish by hand.
+          gh release create "$GITHUB_REF_NAME" --draft --generate-notes --verify-tag $prerelease dist/*
