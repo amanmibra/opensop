@@ -28,7 +28,7 @@ on:
 
 env:
   OPENSOP_ROOT: sops
-  OPENSOP_VERSION: v0.0.4 # an opensop release tag
+  OPENSOP_VERSION: v0.0.5 # an opensop release tag
 
 jobs:
   detect:

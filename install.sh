@@ -4,17 +4,17 @@
 #   curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | sh
 #
 # Options (environment variables):
-#   OPENSOP_REF=<tag>           install a specific release, e.g. v0.0.4 (default: the latest release)
+#   OPENSOP_REF=<tag>           install a specific release, e.g. v0.0.5 (default: the latest release)
 #   OPENSOP_INSTALL_DIR=<dir>   where to put the binary (default: ~/.local/bin)
 #
-# To build from a branch or commit instead, use Go: go install github.com/amanmibra/opensop/cmd/opensop@<ref>
+# To build from a branch or commit instead, use Rust: cargo install --git https://github.com/amanmibra/opensop --branch <branch> (or --rev <commit>)
 
 set -eu
 
 REPO="amanmibra/opensop"
 REF="${OPENSOP_REF:-latest}"
 INSTALL_DIR="${OPENSOP_INSTALL_DIR:-$HOME/.local/bin}"
-# For testing against a local `goreleaser release --snapshot` build: OPENSOP_RELEASES_URL=file:///path/to/dist
+# For testing against local release archives (and checksums.txt): OPENSOP_RELEASES_URL=file:///path/to/dist
 RELEASES_URL="${OPENSOP_RELEASES_URL:-}"
 
 say() { printf 'opensop: %s\n' "$1"; }
@@ -43,7 +43,7 @@ ASSET="opensop_${OS}_${ARCH}.${EXT}"
 case "$REF" in
   latest | v[0-9]*) ;;
   [0-9]*) REF="v$REF" ;;
-  *) fail "OPENSOP_REF must be a release tag like v0.0.4 (got '$REF'). To build a branch or commit: go install github.com/$REPO/cmd/opensop@$REF" ;;
+  *) fail "OPENSOP_REF must be a release tag like v0.0.5 (got '$REF'). To build a branch or commit: cargo install --git https://github.com/$REPO --branch $REF (a commit: --rev $REF)" ;;
 esac
 
 if [ -n "$RELEASES_URL" ]; then
@@ -70,7 +70,7 @@ trap 'rm -rf "$TMP"' EXIT INT TERM
 say "downloading $ASSET ($REF)"
 if ! download "$BASE/$ASSET" "$TMP/$ASSET" 2>/dev/null; then
   if [ "$REF" = latest ]; then
-    fail "no opensop release found at https://github.com/$REPO/releases (none published yet?). Build from source instead: go install github.com/$REPO/cmd/opensop@main"
+    fail "no opensop release found at https://github.com/$REPO/releases (none published yet?). Build from source instead: cargo install --git https://github.com/$REPO"
   fi
   fail "release $REF not found, or it has no $ASSET. See https://github.com/$REPO/releases for available versions"
 fi

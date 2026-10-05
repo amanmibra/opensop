@@ -80,7 +80,7 @@ const instructions = readFileSync(`sops/build/${agentId}.prompt.md`, "utf8");
 curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | sh
 ```
 
-Installs a single `opensop` binary into `~/.local/bin` (macOS, Linux, Windows; amd64 and arm64). Pin a version with `OPENSOP_REF=v0.0.4`, or pick the folder with `OPENSOP_INSTALL_DIR`. `opensop skills install` writes the import skill for Claude Code, Codex and OpenCode at once.
+Installs a single `opensop` binary into `~/.local/bin` (macOS, Linux, Windows; amd64 and arm64). Pin a version with `OPENSOP_REF=v0.0.5`, or pick the folder with `OPENSOP_INSTALL_DIR`. From source, with Rust: `cargo install --git https://github.com/amanmibra/opensop`. `opensop skills install` writes the import skill for Claude Code, Codex and OpenCode at once.
 
 See the [LiveKit example](examples/livekit-restaurant) for a complete agent, the [Braintrust example](examples/braintrust-evals) for blocking SOP changes that make agents worse, and the [behavior gate](examples/behavior-gate) for running your own tests on just the agents a PR changes.
 
@@ -150,7 +150,7 @@ Early. OpenSOP is deliberately just the format and the tools to build and check 
 Contributions welcome. Open an issue first for anything big. See [CONTRIBUTORS.md](CONTRIBUTORS.md).
 
 ```sh
-go test ./...
+cargo test
 ```
 
 ## License
