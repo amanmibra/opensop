@@ -1,0 +1,49 @@
+# Copy to .github/workflows/ in your repo.
+#
+# On every PR that changes your OpenSOP files or eval cases: find the agents whose prompts
+# changed, run their eval cases in Braintrust against the old and new prompts, comment the
+# results on the PR, and fail the check if any case got worse. Make the check required in
+# your branch protection rules to block the merge.
+
+name: OpenSOP evals
+
+on:
+  pull_request:
+    paths:
+      - "sops/**"
+      - "evals/**"
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # needed to build the prompts at the base branch
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Run evals for the agents this PR changes
+        env:
+          BRAINTRUST_API_KEY: ${{ secrets.BRAINTRUST_API_KEY }}
+          OPENSOP_EVAL_MODEL: gpt-4.1-mini # the model your agents run on
+        run: |
+          uv run \
+            --with 'opensop @ git+https://github.com/amanmibra/opensop@v0.0.1' \
+            --with braintrust --with autoevals --with openai --with pyyaml \
+            python evals/run_evals.py \
+              --sops sops \
+              --cases evals/cases.yaml \
+              --base origin/${{ github.base_ref }} \
+              --summary eval-summary.md
+
+      - name: Comment the results on the PR
+        if: always() && hashFiles('eval-summary.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body-file eval-summary.md --edit-last \
+            || gh pr comment ${{ github.event.pull_request.number }} --body-file eval-summary.md

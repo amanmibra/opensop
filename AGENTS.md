@@ -6,7 +6,7 @@ Read [FORMAT.md](FORMAT.md) before creating or editing any file in an OpenSOP fo
 
 ## Working on this repo
 
-- Python 3.12+, managed with uv: `uv sync`, `uv run pytest`.
+- Python 3.10+, managed with uv: `uv sync`, `uv run pytest`.
 - `src/opensop/models.py` is the source of truth for the format. After changing it, run `uv run python -m opensop.schema` to regenerate `spec/`, and update FORMAT.md.
 - `tests/fixtures/restaurants/expected/` is golden output. If a rendering change is intended, regenerate it with `uv run opensop render tests/fixtures/restaurants/sops --out tests/fixtures/restaurants/expected` and review the diff.
 - `examples/livekit-restaurant/sops/` must stay valid and its `build/` current; a test checks both. Run `uv run opensop render examples/livekit-restaurant/sops` after changing rendering.

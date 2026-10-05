@@ -70,7 +70,7 @@ The skill is installed to `.claude/skills/` (Claude Code, OpenCode) and `.agents
 const instructions = readFileSync(`sops/build/${agentId}.prompt.md`, "utf8");
 ```
 
-See the [LiveKit example](examples/livekit-restaurant) for a complete agent.
+See the [LiveKit example](examples/livekit-restaurant) for a complete agent, and the [Braintrust example](examples/braintrust-evals) for blocking SOP changes that make agents worse.
 
 ## How it works
 
