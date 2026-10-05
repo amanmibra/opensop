@@ -2,8 +2,9 @@
 
     python evals/run_evals.py --sops sops --cases evals/cases.yaml --base origin/main
 
-1. Builds every agent's prompt twice: at --base (e.g. the PR's target branch) and as it is now.
-2. Asks `opensop plan` which agents' prompts changed.
+1. Builds every agent's prompt twice with the opensop CLI: at --base (e.g. the PR's target
+   branch, checked out in a temporary git worktree) and as it is now.
+2. Asks `opensop affected` which agents' prompts changed.
 3. Picks the cases that apply to those agents (by SOP or by agent, see cases.yaml).
 4. Runs the cases against both prompts as two Braintrust experiments, so the Braintrust
    UI shows them side by side.
@@ -20,7 +21,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -29,11 +32,6 @@ import yaml
 from autoevals import LLMClassifier
 from braintrust import Eval
 from openai import AsyncOpenAI, OpenAI
-
-from opensop.cli import files_at_ref
-from opensop.loader import load_workspace, load_workspace_files
-from opensop.plan import make_plan, snapshot
-from opensop.render import Build, render_workspace
 
 MODEL = os.environ.get("OPENSOP_EVAL_MODEL", "gpt-4.1-mini")
 JUDGE_MODEL = os.environ.get("OPENSOP_JUDGE_MODEL", MODEL)
@@ -54,6 +52,51 @@ class Case:
 
     def applies_to(self, agent_id: str, agent_sops: set[str]) -> bool:
         return "*" in self.agents or agent_id in self.agents or bool(agent_sops & set(self.sops))
+
+
+@dataclass
+class Built:
+    """One agent's built prompt, from `opensop render` and `opensop agents --json`."""
+
+    prompt: str
+    tools: list[str]
+    sops: list[str]
+    hash: str
+
+
+def opensop(*args: str) -> str:
+    """Run the opensop CLI (on PATH) and return its stdout; its errors go to the log."""
+    result = subprocess.run(["opensop", *args], capture_output=True, text=True)
+    if result.returncode != 0:
+        sys.exit(f"opensop {' '.join(args)} failed:\n{result.stderr}")
+    return result.stdout
+
+
+def build(root: Path, out: Path) -> dict[str, Built]:
+    """Render every agent's prompt in an OpenSOP root into `out`."""
+    opensop("render", str(root), "--out", str(out))
+    agents = json.loads(opensop("agents", str(root), "--json"))
+    return {
+        a["id"]: Built((out / f"{a['id']}.prompt.md").read_text(), a["tools"], a["sops"], a["hash"])
+        for a in agents
+    }
+
+
+def build_at(ref: str, root: Path, tmp: Path) -> dict[str, Built] | None:
+    """Build the prompts as they were at a git ref, in a temporary worktree. None if the ref has no OpenSOP root."""
+    def git(*args: str, cwd: Path = root) -> str:
+        return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+
+    top = Path(git("rev-parse", "--show-toplevel"))
+    worktree = tmp / "base"
+    git("worktree", "add", "--detach", str(worktree), ref)
+    try:
+        base_root = worktree / root.resolve().relative_to(top.resolve())
+        if not (base_root / "opensop.yaml").exists():
+            return None
+        return build(base_root, tmp / "base-build")
+    finally:
+        git("worktree", "remove", "--force", str(worktree))
 
 
 def client(cls=OpenAI):
@@ -120,17 +163,17 @@ def rubric_judge() -> LLMClassifier:
     )
 
 
-def run(label: str, build: Build, work: list[tuple[str, Case]], project: str, llm: OpenAI, local: bool, base_name: str | None):
+def run(label: str, build: dict[str, Built], work: list[tuple[str, Case]], project: str, llm: OpenAI, local: bool, base_name: str | None):
     data = [
         {
             "input": {"agent": agent, "turns": case.turns, "tools": case.tools},
             "expected": case.rubric,
-            "metadata": {"case": case.id, "agent": agent, "must_not_say": case.must_not_say, "prompt_hash": build.agents[agent].hash},
+            "metadata": {"case": case.id, "agent": agent, "must_not_say": case.must_not_say, "prompt_hash": build[agent].hash},
         }
         for agent, case in work
     ]
-    prompts = {agent: build.agents[agent].prompt for agent, _ in work}
-    tools = {agent: build.agents[agent].tools for agent, _ in work}
+    prompts = {agent: build[agent].prompt for agent, _ in work}
+    tools = {agent: build[agent].tools for agent, _ in work}
     # Braintrust runs scorers async, in a new event loop per Eval, so each run gets a fresh async client.
     autoevals.init(client=client(AsyncOpenAI), is_async=True)
     return Eval(
@@ -169,23 +212,25 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="show what would run, call no models")
     args = ap.parse_args()
 
-    head = render_workspace(load_workspace(args.sops))
-    base_files = files_at_ref(Path(args.sops), args.base)
-    base = render_workspace(load_workspace_files(base_files)) if base_files else None
-    plan = make_plan(snapshot(base) if base else {}, snapshot(head))
+    tmp = Path(tempfile.mkdtemp(prefix="opensop-evals-"))
+    root = Path(args.sops)
+    head = build(root, tmp / "head-build")
+    base = build_at(args.base, root, tmp)
+    plan_text = opensop("plan", str(root), "--against", args.base, "--summary")
+    affected = json.loads(opensop("affected", str(root), "--against", args.base, "--format", "json"))
 
     cases = [Case(**c) for c in yaml.safe_load(Path(args.cases).read_text())]
-    changed = [c.agent_id for c in plan.changes if c.status != "removed"]
+    changed = [a["id"] for a in affected["agents"]]  # prompt changed or new; removed agents aren't listed
     work = [
         (agent, case)
         for agent in changed
         for case in cases
-        if case.applies_to(agent, {s.id for s in head.agents[agent].sops})
+        if case.applies_to(agent, set(head[agent].sops))
     ]
     # Cases for brand-new agents have no "before" to compare with; they run on the new prompt only.
-    comparable = [(a, c) for a, c in work if base and a in base.agents]
+    comparable = [(a, c) for a, c in work if base and a in base]
 
-    out = ["## OpenSOP evals", "", plan.text(diffs=False).strip(), ""]
+    out = ["## OpenSOP evals", "", plan_text.strip(), ""]
     print("\n".join(out))
     if not work:
         out.append("No eval cases apply to the changed agents.")

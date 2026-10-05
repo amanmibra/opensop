@@ -29,7 +29,7 @@ OpenSOP keeps the shared parts in one place, in git, and builds every agent's pr
 curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | sh
 ```
 
-Installs [uv](https://docs.astral.sh/uv/) if needed. Already have uv? `uv tool install 'opensop @ git+https://github.com/amanmibra/opensop'`
+Installs a single `opensop` binary into `~/.local/bin` (macOS, Linux, Windows; amd64 and arm64). Pin a version with `OPENSOP_REF=v0.1.0`, or pick the folder with `OPENSOP_INSTALL_DIR`. With Go: `go install github.com/amanmibra/opensop/cmd/opensop@latest`
 
 **2. Import your existing prompts** with your coding agent
 
@@ -138,7 +138,7 @@ Early. OpenSOP is deliberately just the format and the tools to build and check 
 Contributions welcome. Open an issue first for anything big. See [CONTRIBUTORS.md](CONTRIBUTORS.md).
 
 ```sh
-uv sync && uv run pytest
+go test ./...
 ```
 
 ## License

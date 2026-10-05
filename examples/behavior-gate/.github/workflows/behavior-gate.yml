@@ -28,7 +28,7 @@ on:
 
 env:
   OPENSOP_ROOT: sops
-  OPENSOP_VERSION: v0.0.3
+  OPENSOP_VERSION: v0.1.0 # an opensop release tag
 
 jobs:
   detect:
@@ -44,10 +44,10 @@ jobs:
         with:
           fetch-depth: 0 # the base branch is needed to see what changed
 
-      - uses: astral-sh/setup-uv@v6
-
       - name: Install OpenSOP
-        run: uv tool install "opensop @ git+https://github.com/amanmibra/opensop@${OPENSOP_VERSION}"
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | OPENSOP_REF="$OPENSOP_VERSION" sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Work out which agents to test
         id: agents

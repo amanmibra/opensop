@@ -9,8 +9,8 @@ People who have shaped OpenSOP through code, design, or real-world use. Add your
 ## Contributing
 
 1. Open an issue first for anything bigger than a small fix, so we can agree on the approach.
-2. Set up: `uv sync`, then `uv run pytest`.
-3. If you change the format (`src/opensop/models.py`), regenerate the schemas with `uv run python -m opensop.schema` and update [FORMAT.md](FORMAT.md).
+2. Set up: install Go 1.22+, then `go test ./...`.
+3. If you change the format (`internal/model`), update the schemas in `spec/` and [FORMAT.md](FORMAT.md) to match.
 4. If you change rendering, regenerate the golden output and the example build (see [AGENTS.md](AGENTS.md)), and review the diffs.
 5. Keep examples and fixtures fictional. Never commit real customer names, prompts, or call data.
 

@@ -26,13 +26,17 @@ jobs:
 
       - uses: astral-sh/setup-uv@v6
 
+      - name: Install OpenSOP
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | OPENSOP_REF=v0.1.0 sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Run evals for the agents this PR changes
         env:
           BRAINTRUST_API_KEY: ${{ secrets.BRAINTRUST_API_KEY }}
           OPENSOP_EVAL_MODEL: gpt-4.1-mini # the model your agents run on
         run: |
           uv run \
-            --with 'opensop @ git+https://github.com/amanmibra/opensop@v0.0.2' \
             --with braintrust --with autoevals --with openai --with pyyaml \
             python evals/run_evals.py \
               --sops sops \

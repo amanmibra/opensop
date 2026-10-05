@@ -157,7 +157,7 @@ agents/sakura-sushi.yaml: error [locked] can't exclude 'brand-voice': it is lock
 ## Run it
 
 ```
-pip install -e ../..                     # the opensop CLI, from this repo
+go install ../../cmd/opensop             # the opensop CLI, from this repo (or use install.sh)
 opensop render sops && opensop validate sops
 
 npm install
