@@ -2,7 +2,8 @@
 
     opensop validate [ROOT]
     opensop render   [ROOT] [--out DIR] [--check]
-    opensop plan     [ROOT] [--against REF]
+    opensop plan     [ROOT] [--against REF] [--json]
+    opensop agents   [ROOT] [--json]
     opensop overlap  DIR                         what several original prompts share
     opensop compare  [ROOT] --originals DIR      does each rendered prompt still say everything?
     opensop check    [ROOT] [--json]             duplicates and mechanical conflicts
@@ -49,6 +50,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("root", nargs="?", default=".")
     p.add_argument("--against", metavar="REF", help="git ref to compare with (default: the committed build/ folder)")
     p.add_argument("--summary", action="store_true", help="omit the diffs")
+    p.add_argument("--json", action="store_true", help="machine-readable output (for CI)")
+
+    p = sub.add_parser("agents", help="list agents with their platform ids, SOPs and tools")
+    p.add_argument("root", nargs="?", default=".")
+    p.add_argument("--json", action="store_true")
 
     p = sub.add_parser("overlap", help="show text shared across existing prompts (for importing)")
     p.add_argument("dir", help="folder with one existing prompt per agent, named <agent-id>.md or .txt")
@@ -76,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return {"validate": _validate, "render": _render, "plan": _plan, "guide": _guide,
-        "overlap": _overlap, "compare": _compare, "check": _check, "skills": _skills}[args.command](args)
+        "agents": _agents, "overlap": _overlap, "compare": _compare, "check": _check, "skills": _skills}[args.command](args)
     except OpenSOPError as e:
         for issue in e.issues:
             print(issue, file=sys.stderr)
@@ -122,7 +128,34 @@ def _plan(args) -> int:
         before = snapshot(render_workspace(load_workspace_files(files))) if files else {}
     else:
         before = read_snapshot(root / "build")
-    print(make_plan(before, after).text(diffs=not args.summary), end="")
+    plan = make_plan(before, after)
+    if args.json:
+        print(json.dumps(plan.to_dict(), indent=2))
+    else:
+        print(plan.text(diffs=not args.summary), end="")
+    return 0
+
+
+def _agents(args) -> int:
+    build = render_workspace(load_workspace(args.root))
+    agents = [
+        {
+            "id": agent_id,
+            "platform_ref": r.agent.platform_ref,
+            "platform": r.agent.platform,
+            "platform_id": getattr(r.agent, r.agent.platform),
+            "bases": [b.id for b in r.bases],
+            "sops": [s.id for s in r.sops],
+            "tools": r.tools,
+            "hash": r.hash,
+        }
+        for agent_id, r in build.agents.items()
+    ]
+    if args.json:
+        print(json.dumps(agents, indent=2))
+    else:
+        for a in agents:
+            print(f"{a['id']:24} {a['platform_ref']:32} sops: {', '.join(a['sops']) or '-'}")
     return 0
 
 

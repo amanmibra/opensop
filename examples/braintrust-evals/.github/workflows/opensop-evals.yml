@@ -32,7 +32,7 @@ jobs:
           OPENSOP_EVAL_MODEL: gpt-4.1-mini # the model your agents run on
         run: |
           uv run \
-            --with 'opensop @ git+https://github.com/amanmibra/opensop@v0.0.1' \
+            --with 'opensop @ git+https://github.com/amanmibra/opensop@v0.0.2' \
             --with braintrust --with autoevals --with openai --with pyyaml \
             python evals/run_evals.py \
               --sops sops \

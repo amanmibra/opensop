@@ -61,6 +61,7 @@ BlockChange = Literal["edited", "added", "removed"]
 class AgentChange:
     agent_id: str
     status: Literal["added", "removed", "changed"]
+    platform_ref: str = ""  # e.g. "livekit:tonys-pizza"
     blocks: dict[str, BlockChange] = field(default_factory=dict)  # why it changed
     diff: str = ""
 
@@ -111,7 +112,8 @@ class Plan:
     def to_dict(self) -> dict:
         return {
             "changes": [
-                {"agent": c.agent_id, "status": c.status, "blocks": c.blocks, "diff": c.diff} for c in self.changes
+                {"agent": c.agent_id, "platform_ref": c.platform_ref, "status": c.status, "blocks": c.blocks, "diff": c.diff}
+                for c in self.changes
             ],
             "by_block": [
                 {"block": block, "change": kind, "agents": agents} for (block, kind), agents in self.by_block().items()
@@ -130,6 +132,7 @@ def make_plan(before: Snapshot, after: Snapshot) -> Plan:
             AgentChange(
                 agent_id=agent_id,
                 status=status,
+                platform_ref=(new or old).platform_ref,
                 blocks=_block_changes(old.blocks, new.blocks) if old and new else {},
                 diff=_diff(agent_id, old.prompt if old else "", new.prompt if new else ""),
             )

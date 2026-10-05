@@ -70,7 +70,7 @@ The skill is installed to `.claude/skills/` (Claude Code, OpenCode) and `.agents
 const instructions = readFileSync(`sops/build/${agentId}.prompt.md`, "utf8");
 ```
 
-See the [LiveKit example](examples/livekit-restaurant) for a complete agent, and the [Braintrust example](examples/braintrust-evals) for blocking SOP changes that make agents worse.
+See the [LiveKit example](examples/livekit-restaurant) for a complete agent, the [Braintrust example](examples/braintrust-evals) for blocking SOP changes that make agents worse, and the [behavior gate](examples/behavior-gate) for running your own tests on just the agents a PR changes.
 
 ## How it works
 
@@ -104,7 +104,8 @@ $ opensop plan sops --against main
 |---|---|
 | `opensop validate sops` | Check the files |
 | `opensop render sops` | Build one full prompt per agent into `sops/build/` |
-| `opensop plan sops --against main` | Which agents a change touches, and why, with diffs |
+| `opensop plan sops --against main` | Which agents a change touches, and why, with diffs (`--json` for CI) |
+| `opensop agents sops` | List agents with their platform ids, SOPs and tools (`--json` for CI) |
 | `opensop check sops` | Duplicated text and conflicting instructions |
 | `opensop overlap <dir>` | What a set of existing prompts have in common |
 | `opensop compare sops --originals <dir>` | Confirm built prompts still say everything the originals did |

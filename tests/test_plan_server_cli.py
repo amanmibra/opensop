@@ -133,3 +133,22 @@ def test_format_reference_lists_every_validation_code():
     codes |= set(re.findall(r'Issue\(\s*"([a-z_]+)"', (Path(opensop.__file__).parent / "loader.py").read_text()))
     guide = (Path(__file__).parents[1] / "FORMAT.md").read_text()
     assert {c for c in codes if f"`{c}`" not in guide} == set()
+
+
+def test_cli_plan_json_and_agents_json(repo, capsys):
+    import json
+
+    main(["render", str(repo)])
+    edit(repo / "procedures" / "reservations.yaml", "Never double-book a table", "Never double-book or overbook a table")
+    capsys.readouterr()
+    assert main(["plan", str(repo), "--json"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert [(c["agent"], c["platform_ref"], c["status"]) for c in plan["changes"]] == [
+        ("luigis-trattoria", "livekit:luigis-trattoria", "changed"),
+        ("sakura-sushi", "livekit:sakura-sushi", "changed"),
+    ]
+    assert main(["agents", str(repo), "--json"]) == 0
+    agents = {a["id"]: a for a in json.loads(capsys.readouterr().out)}
+    assert agents["sakura-sushi"]["platform_id"] == "sakura-sushi"
+    assert agents["sakura-sushi"]["sops"] == ["allergen-check", "reservations"]
+    assert "transfer_to_staff" in agents["tonys-pizza"]["tools"]
