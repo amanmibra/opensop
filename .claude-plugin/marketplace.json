@@ -1,0 +1,12 @@
+{
+  "name": "opensop",
+  "owner": { "name": "Aman Ibrahim", "url": "https://github.com/amanmibra" },
+  "description": "OpenSOP: modular, git-versioned instructions for teams managing multiple task-driven agents",
+  "plugins": [
+    {
+      "name": "opensop",
+      "source": "./",
+      "description": "Import existing agent prompts into OpenSOP: /opensop:opensop-import"
+    }
+  ]
+}

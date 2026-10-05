@@ -23,21 +23,15 @@ OpenSOP keeps the shared parts in one place, in git, and builds every agent's pr
 
 ## Quickstart
 
-**1. Install**
+**1. Add the import skill to your repo** (one line, run in the repo root):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/skills/opensop-import/SKILL.md --create-dirs -o .claude/skills/opensop-import/SKILL.md
 ```
 
-Installs a single `opensop` binary into `~/.local/bin` (macOS, Linux, Windows; amd64 and arm64). Pin a version with `OPENSOP_REF=v0.0.4`, or pick the folder with `OPENSOP_INSTALL_DIR`. With Go: `go install github.com/amanmibra/opensop/cmd/opensop@latest`
+For Codex, use `-o .agents/skills/opensop-import/SKILL.md` instead. OpenCode reads either.
 
-**2. Import your existing prompts** with your coding agent
-
-```sh
-opensop skills install        # adds the opensop-import skill for Claude Code, Codex and OpenCode
-```
-
-Then run it in your coding agent:
+**2. Run it in your coding agent:**
 
 | Agent | Run |
 |---|---|
@@ -45,7 +39,19 @@ Then run it in your coding agent:
 | Codex | `$opensop-import` (or pick it from `/skills`) |
 | OpenCode | ask it to "use the opensop-import skill" |
 
-The agent turns your prompts into OpenSOP files, checks that nothing was lost, and asks you to approve a one-screen plan before it writes anything.
+That's the whole setup. The skill installs the `opensop` CLI if it's missing, turns your prompts into OpenSOP files, checks that nothing was lost, and asks you to approve a one-screen plan before it writes anything.
+
+<details>
+<summary>Claude Code plugin (shares the skill with your whole team)</summary>
+
+```
+/plugin marketplace add amanmibra/opensop
+/plugin install opensop@opensop
+```
+
+Then run `/opensop:opensop-import` (plugin skills are prefixed with the plugin name). To set it up for everyone who opens the repo, add the marketplace to your project's `.claude/settings.json` under `extraKnownMarketplaces` and enable `opensop@opensop` in `enabledPlugins`; see [Claude Code's plugin docs](https://code.claude.com/docs/en/plugins/marketplace-reference).
+
+</details>
 
 <details>
 <summary>What the import does, step by step</summary>
@@ -60,8 +66,6 @@ The agent turns your prompts into OpenSOP files, checks that nothing was lost, a
 | Review | `opensop check` | Flags duplicates and conflicts (10pm vs 11pm, "always X" vs "never X") for you to decide |
 | Commit | you | Approve a one-screen summary before anything is committed |
 
-The skill is installed to `.claude/skills/` (Claude Code, OpenCode) and `.agents/skills/` (Codex, OpenCode). Use `--agent claude|codex|opencode` for just one. For other agents, `--dir <their skills folder>`, or ask the agent to follow `.agents/skills/opensop-import/SKILL.md`.
-
 </details>
 
 **3. Load the built prompt in your agent**
@@ -69,6 +73,14 @@ The skill is installed to `.claude/skills/` (Claude Code, OpenCode) and `.agents
 ```ts
 const instructions = readFileSync(`sops/build/${agentId}.prompt.md`, "utf8");
 ```
+
+**Installing the CLI yourself** (for CI, or to run the commands below):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | sh
+```
+
+Installs a single `opensop` binary into `~/.local/bin` (macOS, Linux, Windows; amd64 and arm64). Pin a version with `OPENSOP_REF=v0.0.4`, or pick the folder with `OPENSOP_INSTALL_DIR`. `opensop skills install` writes the import skill for Claude Code, Codex and OpenCode at once.
 
 See the [LiveKit example](examples/livekit-restaurant) for a complete agent, the [Braintrust example](examples/braintrust-evals) for blocking SOP changes that make agents worse, and the [behavior gate](examples/behavior-gate) for running your own tests on just the agents a PR changes.
 

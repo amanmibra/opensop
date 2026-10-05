@@ -1,0 +1,8 @@
+{
+  "name": "opensop",
+  "description": "Import existing agent prompts into OpenSOP (shared bases, SOPs, one file per agent), verify nothing was lost, and report conflicts.",
+  "author": { "name": "Aman Ibrahim", "url": "https://github.com/amanmibra" },
+  "homepage": "https://github.com/amanmibra/opensop",
+  "repository": "https://github.com/amanmibra/opensop",
+  "license": "Apache-2.0"
+}

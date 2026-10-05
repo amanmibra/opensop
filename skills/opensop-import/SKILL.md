@@ -21,15 +21,19 @@ Never commit, push or open a pull request without the second approval.
 - Offer a default with each question ("I'll use the LiveKit agent_name as the id unless you say otherwise"), so the user can answer "yes" to most of them.
 - When the user doesn't know, take the option that keeps today's behavior, and note it in the plan.
 
-## 0. Make sure the CLI works
+## 0. Set up the CLI (automatic)
 
-Run `opensop --help`. If it's missing, install it:
+This skill needs the `opensop` command. Set it up without making the user do anything:
 
-```
-curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | sh
-```
+1. Run `opensop --version || opensop --help`. If it works, skip to step 3.
+2. If it's missing, tell the user in one line that you're installing the OpenSOP CLI (a single binary, into `~/.local/bin`), then run:
 
-Then run `opensop guide` and read the whole format reference before writing any file.
+   ```
+   curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | sh
+   ```
+
+   If `opensop` still isn't found afterwards, run it by its full path (`~/.local/bin/opensop`) for the rest of this skill, and tell the user to add `~/.local/bin` to their PATH. If the install fails (no network, unsupported platform), stop and show the user the error.
+3. Run `opensop guide` and read the whole format reference before writing any file.
 
 ## 1. Collect the originals
 
