@@ -1,0 +1,652 @@
+[
+ {
+  "in": "a: yes",
+  "repr": "{'a': True}"
+ },
+ {
+  "in": "a: No",
+  "repr": "{'a': False}"
+ },
+ {
+  "in": "a: on",
+  "repr": "{'a': True}"
+ },
+ {
+  "in": "a: OFF",
+  "repr": "{'a': False}"
+ },
+ {
+  "in": "a: y",
+  "repr": "{'a': 'y'}"
+ },
+ {
+  "in": "a: n",
+  "repr": "{'a': 'n'}"
+ },
+ {
+  "in": "a: True",
+  "repr": "{'a': True}"
+ },
+ {
+  "in": "a: tRue",
+  "repr": "{'a': 'tRue'}"
+ },
+ {
+  "in": "a: 1:30",
+  "repr": "{'a': 90}"
+ },
+ {
+  "in": "a: 10:30:15",
+  "repr": "{'a': 37815}"
+ },
+ {
+  "in": "a: 017",
+  "repr": "{'a': 15}"
+ },
+ {
+  "in": "a: 0o17",
+  "repr": "{'a': '0o17'}"
+ },
+ {
+  "in": "a: 0x1F",
+  "repr": "{'a': 31}"
+ },
+ {
+  "in": "a: 0b101",
+  "repr": "{'a': 5}"
+ },
+ {
+  "in": "a: 1_000",
+  "repr": "{'a': 1000}"
+ },
+ {
+  "in": "a: +12",
+  "repr": "{'a': 12}"
+ },
+ {
+  "in": "a: -0",
+  "repr": "{'a': 0}"
+ },
+ {
+  "in": "a: 09",
+  "repr": "{'a': '09'}"
+ },
+ {
+  "in": "a: 1e5",
+  "repr": "{'a': '1e5'}"
+ },
+ {
+  "in": "a: 1.0e+5",
+  "repr": "{'a': 100000.0}"
+ },
+ {
+  "in": "a: 1.5",
+  "repr": "{'a': 1.5}"
+ },
+ {
+  "in": "a: .5",
+  "repr": "{'a': 0.5}"
+ },
+ {
+  "in": "a: 1.",
+  "repr": "{'a': 1.0}"
+ },
+ {
+  "in": "a: .inf",
+  "repr": "{'a': inf}"
+ },
+ {
+  "in": "a: -.Inf",
+  "repr": "{'a': -inf}"
+ },
+ {
+  "in": "a: .NaN",
+  "repr": "{'a': nan}"
+ },
+ {
+  "in": "a: 1:30.5",
+  "repr": "{'a': 90.5}"
+ },
+ {
+  "in": "a: 1_0.5",
+  "repr": "{'a': 10.5}"
+ },
+ {
+  "in": "a: ~",
+  "repr": "{'a': None}"
+ },
+ {
+  "in": "a: null",
+  "repr": "{'a': None}"
+ },
+ {
+  "in": "a: Null",
+  "repr": "{'a': None}"
+ },
+ {
+  "in": "a:",
+  "repr": "{'a': None}"
+ },
+ {
+  "in": "a: ''",
+  "repr": "{'a': ''}"
+ },
+ {
+  "in": "a: '1'",
+  "repr": "{'a': '1'}"
+ },
+ {
+  "in": "a: \"yes\"",
+  "repr": "{'a': 'yes'}"
+ },
+ {
+  "in": "a: !!str 5",
+  "repr": "{'a': '5'}"
+ },
+ {
+  "in": "a: !!int '7'",
+  "repr": "{'a': 7}"
+ },
+ {
+  "in": "a: =",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a: 2024-01-01",
+  "repr": "{'a': datetime.date(2024, 1, 1)}"
+ },
+ {
+  "in": "a: 2024-1-1 10:00:00",
+  "repr": "{'a': datetime.datetime(2024, 1, 1, 10, 0)}"
+ },
+ {
+  "in": "a: 2001-12-14t21:59:43.10-05:00",
+  "repr": "{'a': datetime.datetime(2001, 12, 14, 21, 59, 43, 100000, tzinfo=datetime.timezone(datetime.timedelta(days=-1, seconds=68400)))}"
+ },
+ {
+  "in": "a: 2001-12-14 21:59:43.123456789Z",
+  "repr": "{'a': datetime.datetime(2001, 12, 14, 21, 59, 43, 123456, tzinfo=datetime.timezone.utc)}"
+ },
+ {
+  "in": "- Never say: x",
+  "repr": "[{'Never say': 'x'}]"
+ },
+ {
+  "in": "- Never say: x: y",
+  "error": true,
+  "mapping_values": true
+ },
+ {
+  "in": "- 'a: b'",
+  "repr": "['a: b']"
+ },
+ {
+  "in": "- text: a\n  tool: b",
+  "repr": "[{'text': 'a', 'tool': 'b'}]"
+ },
+ {
+  "in": "- yes: no",
+  "repr": "[{True: False}]"
+ },
+ {
+  "in": "-\n- a",
+  "repr": "[None, 'a']"
+ },
+ {
+  "in": "- - a\n  - b",
+  "repr": "[['a', 'b']]"
+ },
+ {
+  "in": "a: |\n  line one\n  line two\n",
+  "repr": "{'a': 'line one\\nline two\\n'}"
+ },
+ {
+  "in": "a: >\n  folded\n  text\n",
+  "repr": "{'a': 'folded text\\n'}"
+ },
+ {
+  "in": "a: plain\n  continued\n",
+  "repr": "{'a': 'plain continued'}"
+ },
+ {
+  "in": "a: 'multi\n  line'",
+  "repr": "{'a': 'multi line'}"
+ },
+ {
+  "in": "x: &a [1, 2]\ny: *a",
+  "repr": "{'x': [1, 2], 'y': [1, 2]}"
+ },
+ {
+  "in": "base: &b {k: 1, j: 2}\nm:\n  <<: *b\n  j: 3",
+  "repr": "{'base': {'k': 1, 'j': 2}, 'm': {'k': 1, 'j': 3}}"
+ },
+ {
+  "in": "m:\n  <<: [{a: 1}, {a: 2, b: 3}]\n  c: 4",
+  "repr": "{'m': {'a': 1, 'b': 3, 'c': 4}}"
+ },
+ {
+  "in": "a: 1\na: 2\nb: 3",
+  "repr": "{'a': 2, 'b': 3}"
+ },
+ {
+  "in": "1: a\n1.0: b\ntrue: c",
+  "repr": "{1: 'c'}"
+ },
+ {
+  "in": "? a\n: b",
+  "repr": "{'a': 'b'}"
+ },
+ {
+  "in": "{a: 1, b: [x, y]}",
+  "repr": "{'a': 1, 'b': ['x', 'y']}"
+ },
+ {
+  "in": "[1, 2]",
+  "repr": "[1, 2]"
+ },
+ {
+  "in": "just text",
+  "repr": "'just text'"
+ },
+ {
+  "in": "0",
+  "repr": "0"
+ },
+ {
+  "in": "''",
+  "repr": "''"
+ },
+ {
+  "in": "",
+  "repr": "None"
+ },
+ {
+  "in": "# only a comment\n",
+  "repr": "None"
+ },
+ {
+  "in": "a: b # comment",
+  "repr": "{'a': 'b'}"
+ },
+ {
+  "in": "a: 'it''s'",
+  "repr": "{'a': \"it's\"}"
+ },
+ {
+  "in": "a: \"tab\\there \\u00e9 \\U0001F600\"",
+  "repr": "{'a': 'tab\\there é 😀'}"
+ },
+ {
+  "in": "a: café ñ 😀",
+  "repr": "{'a': 'café ñ 😀'}"
+ },
+ {
+  "in": "a: 12345678901234567890",
+  "repr": "{'a': 12345678901234567890}"
+ },
+ {
+  "in": "a: -1_234",
+  "repr": "{'a': -1234}"
+ },
+ {
+  "in": "a: 0.0001",
+  "repr": "{'a': 0.0001}"
+ },
+ {
+  "in": "a: 100000000000000000.0",
+  "repr": "{'a': 1e+17}"
+ },
+ {
+  "in": "a: 1.0e+16",
+  "repr": "{'a': 1e+16}"
+ },
+ {
+  "in": "a: 3.14159265358979",
+  "repr": "{'a': 3.14159265358979}"
+ },
+ {
+  "in": "key with spaces: v",
+  "repr": "{'key with spaces': 'v'}"
+ },
+ {
+  "in": "'quoted key': v",
+  "repr": "{'quoted key': 'v'}"
+ },
+ {
+  "in": "a: [a, 'b', \"c\"]",
+  "repr": "{'a': ['a', 'b', 'c']}"
+ },
+ {
+  "in": "a: {}",
+  "repr": "{'a': {}}"
+ },
+ {
+  "in": "a: []",
+  "repr": "{'a': []}"
+ },
+ {
+  "in": "a: - x",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a:\n  - b\n  -\n  - ~",
+  "repr": "{'a': ['b', None, None]}"
+ },
+ {
+  "in": "a: b\n---\nc: d",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "--- \na: 1\n...\n",
+  "repr": "{'a': 1}"
+ },
+ {
+  "in": "a:\tb",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a: b\tc",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "\ta: b",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a:b: c",
+  "repr": "{'a:b': 'c'}"
+ },
+ {
+  "in": "a: b: c",
+  "error": true,
+  "mapping_values": true
+ },
+ {
+  "in": "url: http://x.com/a:b",
+  "repr": "{'url': 'http://x.com/a:b'}"
+ },
+ {
+  "in": "a: x #y",
+  "repr": "{'a': 'x'}"
+ },
+ {
+  "in": "a: x#y",
+  "repr": "{'a': 'x#y'}"
+ },
+ {
+  "in": "a: '",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a: [unclosed",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "- a\n b",
+  "repr": "['a b']"
+ },
+ {
+  "in": "a: 1\n b: 2",
+  "error": true,
+  "mapping_values": true
+ },
+ {
+  "in": "a: *x",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "scope: Note: the customer wants",
+  "error": true,
+  "mapping_values": true
+ },
+ {
+  "in": "a: \"esc \\\" q\"",
+  "repr": "{'a': 'esc \" q'}"
+ },
+ {
+  "in": "a: !foo x",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a: !!binary aGVsbG8=",
+  "repr": "{'a': b'hello'}"
+ },
+ {
+  "in": "a: !!python/tuple [1]",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "%YAML 1.1\n---\na: 1",
+  "repr": "{'a': 1}"
+ },
+ {
+  "in": "a: @x",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a: `x",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a: %x",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "- &a x\n- *a",
+  "repr": "['x', 'x']"
+ },
+ {
+  "in": "a: 0x",
+  "repr": "{'a': '0x'}"
+ },
+ {
+  "in": "a: 1__0",
+  "repr": "{'a': 10}"
+ },
+ {
+  "in": "a: 1:61",
+  "repr": "{'a': '1:61'}"
+ },
+ {
+  "in": "- Never say \"x\": y",
+  "repr": "[{'Never say \"x\"': 'y'}]"
+ },
+ {
+  "in": "- \"Never say: x\"\n- y: ",
+  "repr": "['Never say: x', {'y': None}]"
+ },
+ {
+  "in": "text: a\ntool: ''",
+  "repr": "{'text': 'a', 'tool': ''}"
+ },
+ {
+  "in": "a: -",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a: '-'",
+  "repr": "{'a': '-'}"
+ },
+ {
+  "in": "-1: x",
+  "repr": "{-1: 'x'}"
+ },
+ {
+  "in": "a: [a: 1]",
+  "repr": "{'a': [{'a': 1}]}"
+ },
+ {
+  "in": "a: {b}",
+  "repr": "{'a': {'b': None}}"
+ },
+ {
+  "in": "a: b\t",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a: b\t# c",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a: b # c\td",
+  "repr": "{'a': 'b'}"
+ },
+ {
+  "in": "a: 'b'\t",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a:\t'b'",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "-\tx",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "- x\t",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a\t: b",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "[a,\tb]",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "[a, b\t]",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a: |\n  x\ty\n",
+  "repr": "{'a': 'x\\ty\\n'}"
+ },
+ {
+  "in": "a: 'x\ty'",
+  "repr": "{'a': 'x\\ty'}"
+ },
+ {
+  "in": "a: \"x\ty\"",
+  "repr": "{'a': 'x\\ty'}"
+ },
+ {
+  "in": "a: b\n\t\n",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "\t\na: b",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a: b\nc:\td",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a:\n  - b\tc",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a: b c\td",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a: x\n  y\tz",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a:\n\tb: 1",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a: [1,\n\t2]",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "# c\twith tab\na: 1",
+  "repr": "{'a': 1}"
+ },
+ {
+  "in": "a: 1 \t \n",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a: 1\t\nb: 2",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "{a:\tb}",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a: it's\tx",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "a: \"q\\\"\t\"",
+  "repr": "{'a': 'q\"\\t'}"
+ },
+ {
+  "in": "a: 'it''s\ttab'",
+  "repr": "{'a': \"it's\\ttab\"}"
+ },
+ {
+  "in": "a: >-\n  x\ty\n  z\nb: 1",
+  "repr": "{'a': 'x\\ty z', 'b': 1}"
+ },
+ {
+  "in": "a: |\n  x\n\tb",
+  "error": true,
+  "mapping_values": false
+ },
+ {
+  "in": "- |\n  in\tblock\n- next",
+  "repr": "['in\\tblock\\n', 'next']"
+ },
+ {
+  "in": "a: 'multi\n\tline'",
+  "repr": "{'a': 'multi line'}"
+ },
+ {
+  "in": "a: x#\ty",
+  "error": true,
+  "mapping_values": false
+ }
+]
