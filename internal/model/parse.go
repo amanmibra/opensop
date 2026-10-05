@@ -180,17 +180,21 @@ func vStep(v *y.Value, loc []string, e *errs) Step {
 	}
 	var s Step
 	var stepErrs errs
-	validateFields(v.Dict, at(loc, "Step"), &stepErrs, []field{
-		{name: "text", required: true, set: func(v *y.Value, l []string) { s.Text = vStr(v, l, &stepErrs) }},
-		{name: "tool", set: func(v *y.Value, l []string) { s.Tool = vOptStr(v, l, &stepErrs) }},
-		{name: "required", set: func(v *y.Value, l []string) { s.Required = vBool(v, l, &stepErrs) }},
-	})
+	validateFields(v.Dict, at(loc, "Step"), &stepErrs, stepFields(&s, &stepErrs))
 	if len(stepErrs) == 0 {
 		*e = (*e)[:len(*e)-1] // the dict is a valid Step: drop the str branch's error
 		return s
 	}
 	*e = append(*e, stepErrs...)
 	return s
+}
+
+func stepFields(s *Step, e *errs) []field {
+	return []field{
+		{name: "text", required: true, set: func(v *y.Value, l []string) { s.Text = vStr(v, l, e) }},
+		{name: "tool", set: func(v *y.Value, l []string) { s.Tool = vOptStr(v, l, e) }},
+		{name: "required", set: func(v *y.Value, l []string) { s.Required = vBool(v, l, e) }},
+	}
 }
 
 func vSteps(v *y.Value, loc []string, e *errs) []Step {
@@ -248,59 +252,56 @@ func targetingFields(t *Targeting, e *errs) []field {
 func ParseBase(d *y.Dict) (*Base, []FieldError) {
 	var e errs
 	b := &Base{Inherits: []string{}, Position: "top"}
-	fields := append(targetingFields(&b.Targeting, &e),
-		field{name: "id", required: true, set: func(v *y.Value, l []string) { b.ID = vStr(v, l, &e) }},
-		field{name: "inherits", set: func(v *y.Value, l []string) { b.Inherits = vStrList(v, l, &e) }},
-		field{name: "locked", set: func(v *y.Value, l []string) { b.Locked = vBool(v, l, &e) }},
-		field{name: "position", set: func(v *y.Value, l []string) { b.Position = vLiteral(v, []string{"top", "bottom"}, l, &e) }},
-		field{name: "text", required: true, set: func(v *y.Value, l []string) { b.Text = vStr(v, l, &e) }},
-	)
-	validateFields(d, nil, &e, fields)
+	validateFields(d, nil, &e, baseFields(b, &e))
 	if len(e) > 0 {
 		return nil, e
 	}
 	return b, nil
 }
 
+func baseFields(b *Base, e *errs) []field {
+	return append(targetingFields(&b.Targeting, e),
+		field{name: "id", required: true, set: func(v *y.Value, l []string) { b.ID = vStr(v, l, e) }},
+		field{name: "inherits", set: func(v *y.Value, l []string) { b.Inherits = vStrList(v, l, e) }},
+		field{name: "locked", set: func(v *y.Value, l []string) { b.Locked = vBool(v, l, e) }},
+		field{name: "position", set: func(v *y.Value, l []string) { b.Position = vLiteral(v, Positions, l, e) }},
+		field{name: "text", required: true, set: func(v *y.Value, l []string) { b.Text = vStr(v, l, e) }},
+	)
+}
+
 // ParseSOP validates a procedure file (with "id" already set).
 func ParseSOP(d *y.Dict) (*SOP, []FieldError) {
 	var e errs
 	s := &SOP{Delivery: "prompt", ProcedureSteps: []Step{}, ForbiddenActions: []Step{}, WarningSigns: []Step{}}
-	fields := append(targetingFields(&s.Targeting, &e),
-		field{name: "id", required: true, set: func(v *y.Value, l []string) { s.ID = vStr(v, l, &e) }},
-		field{name: "name", required: true, set: func(v *y.Value, l []string) { s.Name = vStr(v, l, &e) }},
-		field{name: "locked", set: func(v *y.Value, l []string) { s.Locked = vBool(v, l, &e) }},
-		field{name: "delivery", set: func(v *y.Value, l []string) {
-			s.Delivery = vLiteral(v, []string{"prompt", "auto", "tool"}, l, &e)
-		}},
-		field{name: "description", set: func(v *y.Value, l []string) { s.Description = vStr(v, l, &e) }},
-		field{name: "scope", set: func(v *y.Value, l []string) { s.Scope = vStr(v, l, &e) }},
-		field{name: "guidance", set: func(v *y.Value, l []string) { s.Guidance = vStr(v, l, &e) }},
-		field{name: "procedureSteps", set: func(v *y.Value, l []string) { s.ProcedureSteps = vSteps(v, l, &e) }},
-		field{name: "forbiddenActions", set: func(v *y.Value, l []string) { s.ForbiddenActions = vSteps(v, l, &e) }},
-		field{name: "warningSigns", set: func(v *y.Value, l []string) { s.WarningSigns = vSteps(v, l, &e) }},
-	)
-	validateFields(d, nil, &e, fields)
+	validateFields(d, nil, &e, sopFields(s, &e))
 	if len(e) > 0 {
 		return nil, e
 	}
 	return s, nil
 }
 
+func sopFields(s *SOP, e *errs) []field {
+	return append(targetingFields(&s.Targeting, e),
+		field{name: "id", required: true, set: func(v *y.Value, l []string) { s.ID = vStr(v, l, e) }},
+		field{name: "name", required: true, set: func(v *y.Value, l []string) { s.Name = vStr(v, l, e) }},
+		field{name: "locked", set: func(v *y.Value, l []string) { s.Locked = vBool(v, l, e) }},
+		field{name: "delivery", set: func(v *y.Value, l []string) {
+			s.Delivery = vLiteral(v, Deliveries, l, e)
+		}},
+		field{name: "description", set: func(v *y.Value, l []string) { s.Description = vStr(v, l, e) }},
+		field{name: "scope", set: func(v *y.Value, l []string) { s.Scope = vStr(v, l, e) }},
+		field{name: "guidance", set: func(v *y.Value, l []string) { s.Guidance = vStr(v, l, e) }},
+		field{name: "procedureSteps", set: func(v *y.Value, l []string) { s.ProcedureSteps = vSteps(v, l, e) }},
+		field{name: "forbiddenActions", set: func(v *y.Value, l []string) { s.ForbiddenActions = vSteps(v, l, e) }},
+		field{name: "warningSigns", set: func(v *y.Value, l []string) { s.WarningSigns = vSteps(v, l, e) }},
+	)
+}
+
 // ParseAgent validates an agent file (with "id" already set).
 func ParseAgent(d *y.Dict) (*Agent, []FieldError) {
 	var e errs
 	a := &Agent{Inherits: []string{}, Exclude: []string{}}
-	validateFields(d, nil, &e, []field{
-		{name: "id", required: true, set: func(v *y.Value, l []string) { a.ID = vStr(v, l, &e) }},
-		{name: "livekit", set: func(v *y.Value, l []string) { a.Livekit = vOptStr(v, l, &e) }},
-		{name: "vapi", set: func(v *y.Value, l []string) { a.Vapi = vOptStr(v, l, &e) }},
-		{name: "elevenlabs", set: func(v *y.Value, l []string) { a.Elevenlabs = vOptStr(v, l, &e) }},
-		{name: "inherits", set: func(v *y.Value, l []string) { a.Inherits = vStrList(v, l, &e) }},
-		{name: "exclude", set: func(v *y.Value, l []string) { a.Exclude = vStrList(v, l, &e) }},
-		{name: "variables", set: func(v *y.Value, l []string) { a.Variables = vVars(v, l, &e) }},
-		{name: "instructions", set: func(v *y.Value, l []string) { a.Instructions = vStr(v, l, &e) }},
-	})
+	validateFields(d, nil, &e, agentFields(a, &e))
 	if len(e) > 0 {
 		return nil, e
 	}
@@ -316,11 +317,32 @@ func ParseAgent(d *y.Dict) (*Agent, []FieldError) {
 	return a, nil
 }
 
+func agentFields(a *Agent, e *errs) []field {
+	return []field{
+		{name: "id", required: true, set: func(v *y.Value, l []string) { a.ID = vStr(v, l, e) }},
+		{name: "livekit", set: func(v *y.Value, l []string) { a.Livekit = vOptStr(v, l, e) }},
+		{name: "vapi", set: func(v *y.Value, l []string) { a.Vapi = vOptStr(v, l, e) }},
+		{name: "elevenlabs", set: func(v *y.Value, l []string) { a.Elevenlabs = vOptStr(v, l, e) }},
+		{name: "inherits", set: func(v *y.Value, l []string) { a.Inherits = vStrList(v, l, e) }},
+		{name: "exclude", set: func(v *y.Value, l []string) { a.Exclude = vStrList(v, l, e) }},
+		{name: "variables", set: func(v *y.Value, l []string) { a.Variables = vVars(v, l, e) }},
+		{name: "instructions", set: func(v *y.Value, l []string) { a.Instructions = vStr(v, l, e) }},
+	}
+}
+
 // ParseConfig validates opensop.yaml.
 func ParseConfig(d *y.Dict) (*Config, []FieldError) {
 	var e errs
 	c := &Config{Version: 1, SopsHeading: "## Procedures", SopOrder: []string{}}
-	validateFields(d, nil, &e, []field{
+	validateFields(d, nil, &e, configFields(c, &e))
+	if len(e) > 0 {
+		return nil, e
+	}
+	return c, nil
+}
+
+func configFields(c *Config, e *errs) []field {
+	return []field{
 		{name: "version", set: func(v *y.Value, l []string) {
 			ok := false
 			switch v.Kind {
@@ -335,14 +357,10 @@ func ParseConfig(d *y.Dict) (*Config, []FieldError) {
 				e.add(l, "Input should be 1")
 			}
 		}},
-		{name: "variables", set: func(v *y.Value, l []string) { c.Variables = vVars(v, l, &e) }},
-		{name: "sops_heading", set: func(v *y.Value, l []string) { c.SopsHeading = vStr(v, l, &e) }},
-		{name: "sop_order", set: func(v *y.Value, l []string) { c.SopOrder = vStrList(v, l, &e) }},
-	})
-	if len(e) > 0 {
-		return nil, e
+		{name: "variables", set: func(v *y.Value, l []string) { c.Variables = vVars(v, l, e) }},
+		{name: "sops_heading", set: func(v *y.Value, l []string) { c.SopsHeading = vStr(v, l, e) }},
+		{name: "sop_order", set: func(v *y.Value, l []string) { c.SopOrder = vStrList(v, l, e) }},
 	}
-	return c, nil
 }
 
 func itoa(i int) string {
@@ -351,4 +369,36 @@ func itoa(i int) string {
 		return digits[i : i+1]
 	}
 	return itoa(i/10) + digits[i%10:i%10+1]
+}
+
+// Literal choices, shared with the schema test.
+var (
+	Positions  = []string{"top", "bottom"}
+	Deliveries = []string{"prompt", "auto", "tool"}
+)
+
+// FieldNames lists a file kind's fields in declaration order ("base", "sop", "agent",
+// "opensop", "step") and which are required, as validation sees them.
+func FieldNames(kind string) (names, required []string) {
+	var e errs
+	var fields []field
+	switch kind {
+	case "base":
+		fields = baseFields(&Base{}, &e)
+	case "sop":
+		fields = sopFields(&SOP{}, &e)
+	case "agent":
+		fields = agentFields(&Agent{}, &e)
+	case "opensop":
+		fields = configFields(&Config{}, &e)
+	case "step":
+		fields = stepFields(&Step{}, &e)
+	}
+	for _, f := range fields {
+		names = append(names, f.name)
+		if f.required {
+			required = append(required, f.name)
+		}
+	}
+	return names, required
 }
