@@ -260,6 +260,20 @@ new_scenario; write sops/procedures/order.yaml $'name: Order\nagents: "*"\ndescr
 write sops/opensop.yaml $'variables:\n  staff_transfer: the manager on duty\nsop_order: [order, allergen-check, order]\nsops_heading: "# Procedimientos"\n'
 run_case "sop_order duplicates" render sops
 
+new_scenario; write sops/bases/.hidden.md $'---\nagents: "*"\n---\nHidden base text.\n'
+write sops/agents/café-ñ.yaml $'vapi: asst_ñ\nvariables: {restaurant_name: Café, menu_allergen_link: x}\n'
+write sops/procedures/zz.yaml $'name: Only a name\n'
+write sops/procedures/empty-agents.yaml $'name: Empty\nagents: []\nexclude: []\ndescription: d\n'
+run_case "hidden files and unicode ids" render sops
+run_case "unicode ids agents" agents sops
+run_case "unicode ids affected json" affected sops --format json
+new_scenario; write sops/bases/brand-voice.md $'---\nagents: "*"\ntext: ignored\nposition: bottom\ninherits: [closing]\n---\nBottom with a parent.\n'
+run_case "front matter text key, bottom with parent" render sops
+new_scenario; edit sops/agents/tonys-pizza.yaml "inherits: [pizza-context]" "inherits: [pasta-context]"
+run_case "check ignores validation errors" check sops
+run_case "plan outside a git repo" plan sops --against main
+run_case "compare with an unknown agent original" compare sops --originals expected
+
 # --- check, overlap and compare scenarios (from the Python tests) ------------------------------
 
 new_scenario

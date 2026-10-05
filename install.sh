@@ -1,53 +1,115 @@
 #!/bin/sh
-# Install the opensop CLI.
+# Install the opensop CLI: one prebuilt binary from GitHub Releases. No Python or uv needed.
 #
 #   curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | sh
 #
-# Installs uv (https://docs.astral.sh/uv/) first if it's missing, then installs opensop as a uv tool.
 # Options (environment variables):
-#   OPENSOP_REF=<branch|tag|commit>   install a specific version (default: main)
+#   OPENSOP_REF=<tag>           install a specific release, e.g. v0.1.0 (default: the latest release)
+#   OPENSOP_INSTALL_DIR=<dir>   where to put the binary (default: ~/.local/bin)
+#
+# To build from a branch or commit instead, use Go: go install github.com/amanmibra/opensop/cmd/opensop@<ref>
 
 set -eu
 
-REPO="https://github.com/amanmibra/opensop"
-REF="${OPENSOP_REF:-main}"
-
-FRESH_UV=""
+REPO="amanmibra/opensop"
+REF="${OPENSOP_REF:-latest}"
+INSTALL_DIR="${OPENSOP_INSTALL_DIR:-$HOME/.local/bin}"
+# For testing against a local `goreleaser release --snapshot` build: OPENSOP_RELEASES_URL=file:///path/to/dist
+RELEASES_URL="${OPENSOP_RELEASES_URL:-}"
 
 say() { printf 'opensop: %s\n' "$1"; }
 fail() { printf 'opensop: error: %s\n' "$1" >&2; exit 1; }
 
-if ! command -v uv >/dev/null 2>&1; then
-  say "uv not found; installing it from astral.sh"
-  FRESH_UV=1
-  if command -v curl >/dev/null 2>&1; then
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-  elif command -v wget >/dev/null 2>&1; then
-    wget -qO- https://astral.sh/uv/install.sh | sh
-  else
-    fail "need curl or wget to install uv"
-  fi
-  # Make uv usable in this shell without restarting it.
-  for dir in "${XDG_BIN_HOME:-}" "$HOME/.local/bin" "$HOME/.cargo/bin"; do
-    if [ -n "$dir" ] && [ -x "$dir/uv" ]; then PATH="$dir:$PATH"; fi
-  done
-  command -v uv >/dev/null 2>&1 || fail "uv installed but not on PATH; open a new terminal and rerun"
+case "$(uname -s)" in
+  Linux) OS=linux ;;
+  Darwin) OS=darwin ;;
+  MINGW* | MSYS* | CYGWIN*) OS=windows ;;
+  *) fail "unsupported operating system: $(uname -s). Download a binary from https://github.com/$REPO/releases" ;;
+esac
+case "$(uname -m)" in
+  x86_64 | amd64) ARCH=amd64 ;;
+  arm64 | aarch64) ARCH=arm64 ;;
+  *) fail "unsupported CPU architecture: $(uname -m). Download a binary from https://github.com/$REPO/releases" ;;
+esac
+
+EXT=tar.gz
+BIN=opensop
+if [ "$OS" = windows ]; then
+  EXT=zip
+  BIN=opensop.exe
 fi
+ASSET="opensop_${OS}_${ARCH}.${EXT}"
 
-SPEC="opensop @ git+$REPO@$REF"
+case "$REF" in
+  latest | v[0-9]*) ;;
+  [0-9]*) REF="v$REF" ;;
+  *) fail "OPENSOP_REF must be a release tag like v0.1.0 (got '$REF'). To build a branch or commit: go install github.com/$REPO/cmd/opensop@$REF" ;;
+esac
 
-say "installing $SPEC"
-uv tool install --force --quiet "$SPEC"
-
-if command -v opensop >/dev/null 2>&1; then
-  say "installed: $(command -v opensop)"
-  if [ -n "$FRESH_UV" ]; then
-    say "open a new terminal (or run: . \"\$HOME/.local/bin/env\") so your shell finds opensop"
-  fi
+if [ -n "$RELEASES_URL" ]; then
+  BASE="$RELEASES_URL"
+elif [ "$REF" = latest ]; then
+  BASE="https://github.com/$REPO/releases/latest/download"
 else
-  BIN_DIR="$(uv tool dir --bin 2>/dev/null || echo "$HOME/.local/bin")"
-  say "installed to $BIN_DIR, which isn't on your PATH yet."
-  say "run 'uv tool update-shell' (or add $BIN_DIR to PATH) and open a new terminal."
+  BASE="https://github.com/$REPO/releases/download/$REF"
 fi
+
+download() { # url dest
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$1" -o "$2"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q "$1" -O "$2"
+  else
+    fail "need curl or wget to download opensop"
+  fi
+}
+
+TMP="$(mktemp -d 2>/dev/null || mktemp -d -t opensop)"
+trap 'rm -rf "$TMP"' EXIT INT TERM
+
+say "downloading $ASSET ($REF)"
+if ! download "$BASE/$ASSET" "$TMP/$ASSET" 2>/dev/null; then
+  if [ "$REF" = latest ]; then
+    fail "no opensop release found at https://github.com/$REPO/releases (none published yet?). Build from source instead: go install github.com/$REPO/cmd/opensop@main"
+  fi
+  fail "release $REF not found, or it has no $ASSET. See https://github.com/$REPO/releases for available versions"
+fi
+
+# Verify the checksum when the release has one and a sha256 tool is available.
+if download "$BASE/checksums.txt" "$TMP/checksums.txt" 2>/dev/null; then
+  EXPECTED="$(grep " $ASSET\$" "$TMP/checksums.txt" | cut -d ' ' -f 1 || true)"
+  ACTUAL=""
+  if command -v sha256sum >/dev/null 2>&1; then
+    ACTUAL="$(sha256sum "$TMP/$ASSET" | cut -d ' ' -f 1)"
+  elif command -v shasum >/dev/null 2>&1; then
+    ACTUAL="$(shasum -a 256 "$TMP/$ASSET" | cut -d ' ' -f 1)"
+  fi
+  if [ -n "$EXPECTED" ] && [ -n "$ACTUAL" ] && [ "$EXPECTED" != "$ACTUAL" ]; then
+    fail "checksum mismatch for $ASSET; try again, or download it by hand from https://github.com/$REPO/releases"
+  fi
+fi
+
+mkdir -p "$TMP/x"
+if [ "$EXT" = zip ]; then
+  command -v unzip >/dev/null 2>&1 || fail "need unzip to extract $ASSET"
+  unzip -q "$TMP/$ASSET" -d "$TMP/x"
+else
+  tar -xzf "$TMP/$ASSET" -C "$TMP/x"
+fi
+[ -f "$TMP/x/$BIN" ] || fail "$ASSET doesn't contain $BIN"
+
+mkdir -p "$INSTALL_DIR"
+cp "$TMP/x/$BIN" "$INSTALL_DIR/$BIN.tmp"
+chmod 755 "$INSTALL_DIR/$BIN.tmp"
+mv "$INSTALL_DIR/$BIN.tmp" "$INSTALL_DIR/$BIN"
+say "installed $INSTALL_DIR/$BIN"
+
+case ":$PATH:" in
+  *":$INSTALL_DIR:"*) ;;
+  *)
+    say "$INSTALL_DIR isn't on your PATH yet. Add it, then open a new terminal:"
+    say "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.profile"
+    ;;
+esac
 
 say "next: 'opensop skills install' in your repo, then run the opensop-import skill in Claude Code, Codex or OpenCode"
