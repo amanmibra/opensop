@@ -32,11 +32,11 @@ pub const AGENT_FIELDS: &[&str] =
 pub const CONFIG_FIELDS: &[&str] = &["version", "variables", "sops_heading", "sop_order"];
 pub const STEP_FIELDS: &[&str] = &["text", "tool", "required"];
 /// Fields a file must set ("id" and a base's "text" are filled in by the loader).
-pub const SOP_REQUIRED: &[&str] = &["name"];
+pub const SOP_REQUIRED: &[&str] = &["name", "procedureSteps"];
 pub const STEP_REQUIRED: &[&str] = &["text"];
 
 /// The `agents` / `exclude` pair shared by bases and SOPs.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Targeting {
     pub all: bool, // agents: "*"
     pub agents: Vec<String>,
@@ -72,6 +72,8 @@ pub struct Base {
 #[derive(Clone, Debug, Default)]
 pub struct Sop {
     pub id: String,
+    /// The file it was read from, e.g. "procedures/allergen-check.md" (not part of its JSON).
+    pub file: String,
     pub targeting: Targeting,
     pub name: String,
     pub locked: bool,
@@ -424,7 +426,8 @@ pub fn parse_base(map: &Mapping) -> Result<Base, Vec<String>> {
 /// A procedure file, with "id" already set.
 pub fn parse_sop(map: &Mapping) -> Result<Sop, Vec<String>> {
     let mut e = Errors::default();
-    let f = Fields::new(map, "", SOP_FIELDS, SOP_REQUIRED, &mut e);
+    // A missing or empty procedureSteps is reported as missing_steps before this is called.
+    let f = Fields::new(map, "", SOP_FIELDS, &SOP_REQUIRED[..1], &mut e);
     let text = |name: &str, e: &mut Errors| f.string(name, e).unwrap_or_default();
     let sop = Sop {
         targeting: f.targeting(&mut e),
@@ -438,6 +441,7 @@ pub fn parse_sop(map: &Mapping) -> Result<Sop, Vec<String>> {
         procedure_steps: f.steps("procedureSteps", &mut e),
         forbidden_actions: f.steps("forbiddenActions", &mut e),
         warning_signs: f.steps("warningSigns", &mut e),
+        file: String::new(),
     };
     finish(sop, e)
 }

@@ -37,7 +37,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "A procedure the agent follows. Written as procedures/<id>.yaml.",
+  "description": "A procedure the agent follows. Written as procedures/<id>.yaml; procedures/<id>.md (Markdown) holds the same fields, with only agents, exclude, locked and delivery in its front matter.",
   "properties": {
     "agents": {
       "anyOf": [
@@ -64,7 +64,7 @@
       "type": "array"
     },
     "id": {
-      "description": "The file name without .yaml. Set automatically; if you write it, it must match.",
+      "description": "The file name without .yaml or .md. Set automatically; if you write it, it must match.",
       "title": "Id",
       "type": "string"
     },
@@ -109,7 +109,7 @@
       "type": "string"
     },
     "procedureSteps": {
-      "description": "Ordered steps. Each is a string, or {text, tool, required}.",
+      "description": "Ordered steps; at least one. Each is a string, or {text, tool, required}.",
       "items": {
         "anyOf": [
           {
@@ -121,7 +121,8 @@
         ]
       },
       "title": "Proceduresteps",
-      "type": "array"
+      "type": "array",
+      "minItems": 1
     },
     "forbiddenActions": {
       "description": "Things the agent must never do. Each is a string, or {text, tool}.",
@@ -155,7 +156,8 @@
     }
   },
   "required": [
-    "name"
+    "name",
+    "procedureSteps"
   ],
   "title": "OpenSOP SOP: procedures/<id>.yaml",
   "type": "object"

@@ -704,3 +704,199 @@ fn fields_match_the_published_schemas() {
     let agent = schema("agent.schema.json");
     assert!(PLATFORMS.iter().all(|p| agent["properties"].get(*p).is_some()));
 }
+
+// --- Markdown SOPs, fmt and convert -------------------------------------------------------------------
+
+use crate::sopfile::{rewrite, Kind};
+use crate::workspace::parse_sop_file;
+
+fn md_fixture() -> String {
+    read(&repo_root().join("tests/fixtures/markdown/allergen-check.md"))
+}
+
+/// (code, line) of each problem in a Markdown SOP.
+fn md_problems(text: &str) -> Vec<(&'static str, usize)> {
+    let issues = parse_sop_file("procedures/x.md", text).err().unwrap_or_default();
+    let line = |m: &str| m.strip_prefix("line ").and_then(|r| r.split(':').next()?.parse().ok()).unwrap_or(0);
+    issues.iter().map(|i| (i.code, line(&i.message))).collect()
+}
+
+const MD_OK: &str = "# Name\n\n**Goal:** g\n\n## Steps\n1. Do it\n";
+
+#[test]
+fn markdown_sop_reads_into_the_same_sop_as_yaml() {
+    let (md, _) = parse_sop_file("procedures/allergen-check.md", &md_fixture()).unwrap();
+    let yaml_text = read(&sops().join("procedures/allergen-check.yaml"));
+    let (yaml, _) = parse_sop_file("procedures/allergen-check.yaml", &yaml_text).unwrap();
+    assert_eq!(md.description, "Customer leaves knowing whether their order is safe for their allergy.");
+    assert_eq!(md.procedure_steps[2].tool.as_deref(), Some("lookup_allergens"));
+    assert!(md.procedure_steps[2].required && md.procedure_steps[0].plain);
+    // Only the guidance's trailing newline (from the YAML `|` block) differs.
+    let yaml = Sop { guidance: yaml.guidance.trim_end().to_string(), file: md.file.clone(), ..yaml };
+    assert_eq!(md.canonical_json(), yaml.canonical_json());
+}
+
+#[test]
+fn markdown_sop_renders_the_same_prompts_and_tool_json() {
+    let r = Repo::new();
+    std::fs::remove_file(r.path("procedures/allergen-check.yaml")).unwrap();
+    std::fs::write(r.path("procedures/allergen-check.md"), md_fixture()).unwrap();
+    let out = tempfile::tempdir().unwrap();
+    write_build(&build(r.root()), out.path()).unwrap();
+    for (name, text) in read_dir(&fixture().join("expected"), "") {
+        if name != "lock.json" {
+            assert_eq!(read(&out.path().join(&name)), text, "{name}");
+        }
+    }
+}
+
+#[test]
+fn markdown_fields_guidance_and_any_section_order() {
+    let text = "---\ndelivery: auto\n---\n# Name\n**When:** a\nb\n\nOne.\nTwo.\n\nThree.\n\n## Warning signs\n- w\n## Steps\n1. s `required`\n";
+    let (sop, warnings) = parse_sop_file("procedures/x.md", text).unwrap();
+    assert!(warnings.is_empty());
+    assert_eq!((sop.scope.as_str(), sop.guidance.as_str()), ("a b", "One.\nTwo.\n\nThree."));
+    assert_eq!((sop.delivery.as_str(), sop.warning_signs[0].text.as_str()), ("auto", "w"));
+    assert!(sop.procedure_steps[0].required && sop.procedure_steps[0].tool.is_none());
+}
+
+#[test]
+fn markdown_formatting_checks_report_code_and_line() {
+    for (text, want) in [
+        ("---\nname: X\nagents: \"*\"\n---\n# Name\n## Steps\n1. a\n", ("md_settings_field", 2)),
+        ("---\nagents: \"*\"\nprocedureSteps: [a]\n---\n# Name\n## Steps\n1. a\n", ("md_settings_field", 3)),
+        ("Intro\n# Name\n## Steps\n1. a\n", ("md_text_before_name", 1)),
+        ("# Name\n## Steps\n1. a\n# Other\n", ("md_extra_name", 4)),
+        ("# Name\n## Steps\n1. a\n## Notes\n- b\n", ("md_unknown_section", 4)),
+        ("# Name\n## steps\n1. a\n## Steps\n1. a\n", ("md_unknown_section", 2)),
+        ("# Name\n## Steps\n1. a\n## Steps\n1. b\n", ("md_duplicate_section", 4)),
+        ("# Name\n### Detail\n## Steps\n1. a\n", ("md_heading_level", 2)),
+        ("# Name\n**Objective:** o\n## Steps\n1. a\n", ("md_unknown_field", 2)),
+        ("# Name\n**Goal**: o\n## Steps\n1. a\n", ("md_unknown_field", 2)),
+        ("# Name\n**Goal:** a\n\n**Goal:** b\n## Steps\n1. a\n", ("md_duplicate_field", 4)),
+        ("# Name\n## Steps\n1. a\nloose text\n", ("md_text_in_section", 4)),
+        ("# Name\n## Steps\n1. a\n* b\n", ("md_text_in_section", 4)),
+        ("# Name\n## Steps\n1. a `tool:`\n", ("md_bad_annotation", 3)),
+        ("# Name\n## Steps\n1. a `tools: x`\n", ("md_bad_annotation", 3)),
+        ("# Name\n## Steps\n1. a `tool: two words`\n", ("md_bad_annotation", 3)),
+        ("# Name\n## Steps\n1. a `tool: x` `tool: y`\n", ("md_bad_annotation", 3)),
+        ("# Name\n## Steps\n1. a\n## Never\n- b `required`\n", ("md_required_outside_steps", 5)),
+        ("# Name\n## Steps\n1. a\n2. `tool: x`\n", ("empty_step", 4)),
+        ("# Name\n**Goal:** g\n", ("missing_steps", 1)),
+        ("# Name\n\n## Steps\n\n## Never\n- n\n", ("missing_steps", 3)),
+    ] {
+        assert_eq!(md_problems(text), [want], "{text}");
+    }
+    assert_eq!(md_problems("\n\n"), [("md_missing_name", 1)]);
+    assert_eq!(md_problems("**Goal:** g\n## Steps\n1. a\n"), [("md_text_before_name", 1), ("md_missing_name", 1)]);
+    assert_eq!(
+        md_problems("---\nagents: []\n---\n## Steps\n1. a\n"),
+        [("md_text_before_name", 4), ("md_missing_name", 4)]
+    );
+    assert!(md_problems(MD_OK).is_empty());
+    // Ordinary code at the end of an item is text, and indented lines continue it.
+    let (sop, _) = parse_sop_file("procedures/x.md", "# N\n## Steps\n1. Say `hello`\n  and wait\n").unwrap();
+    assert_eq!(sop.procedure_steps[0].text, "Say `hello` and wait");
+}
+
+#[test]
+fn empty_never_or_warning_section_is_a_warning() {
+    let (_, warnings) = parse_sop_file("procedures/x.md", &format!("{MD_OK}\n## Never\n")).unwrap();
+    assert_eq!(codes(&warnings), ["md_empty_section"]);
+    assert_eq!(warnings[0].message, "line 8: `## Never` has no items; add some or remove the heading");
+    let r = Repo::new();
+    std::fs::write(r.path("procedures/extra.md"), format!("---\nagents: \"*\"\n---\n{MD_OK}\n## Warning signs\n"))
+        .unwrap();
+    assert_eq!(codes(&validate(&ws(r.root()))), ["md_empty_section"]);
+}
+
+#[test]
+fn steps_are_required_in_yaml_too() {
+    let r = Repo::new();
+    r.edit("procedures/reservations.yaml", "procedureSteps:", "procedureSteps: []\nx:");
+    let issues = load_issues(r.root());
+    assert_eq!(codes(&issues), ["missing_steps"]);
+    assert_eq!(issues[0].path, "procedures/reservations.yaml");
+    assert!(issues[0].message.starts_with("line 5: "), "{}", issues[0].message);
+    let r = Repo::new();
+    std::fs::write(r.path("procedures/reservations.yaml"), "name: Reservations\ndescription: d\n").unwrap();
+    assert_eq!(codes(&load_issues(r.root())), ["missing_steps"]);
+}
+
+#[test]
+fn same_sop_as_markdown_and_yaml_is_an_error() {
+    let r = Repo::new();
+    std::fs::write(r.path("procedures/reservations.md"), MD_OK).unwrap();
+    assert_eq!(codes(&load_issues(r.root())), ["duplicate_file"]);
+}
+
+#[test]
+fn markdown_sop_paths_are_used_in_issues() {
+    let r = Repo::new();
+    std::fs::write(
+        r.path("procedures/extra.md"),
+        format!("---\nagents: [nobody]\n---\n{}", MD_OK.replace("**Goal:** g\n", "")),
+    )
+    .unwrap();
+    let issues = validate(&ws(r.root()));
+    assert_eq!(codes(&issues), ["unknown_agent", "missing_goal"]);
+    assert!(issues.iter().all(|i| i.path == "procedures/extra.md"));
+}
+
+#[test]
+fn fmt_is_canonical_and_idempotent() {
+    let (_, once) = rewrite("procedures/allergen-check.md", &md_fixture(), Kind::Markdown).unwrap();
+    assert!(
+        once.contains("## Steps\n1. Ask")
+            && once.contains("2. Name")
+            && once.contains("`tool: lookup_allergens` `required`")
+    );
+    assert!(once.find("## Steps").unwrap() < once.find("## Never").unwrap());
+    assert!(once.starts_with("---\n# The allergen SOP"), "front matter is kept as written");
+    let (_, twice) = rewrite("procedures/allergen-check.md", &once, Kind::Markdown).unwrap();
+    assert_eq!(once, twice);
+    // Every fixture YAML file is already canonical.
+    for (name, text) in read_dir(&sops().join("procedures"), ".yaml") {
+        let path = format!("procedures/{name}.yaml");
+        assert_eq!(rewrite(&path, &text, Kind::Yaml).unwrap().1, text, "{name}");
+    }
+}
+
+#[test]
+fn fmt_keeps_yaml_values_exactly() {
+    let text = "# header comment\n\nid: x\ndelivery: prompt   # dropped\nname: 'X'\nagents: [b, \"vapi:asst_1\"]\nguidance: |+\n  keep\n\n   indented\n\nprocedureSteps:\n- text: plain object\n- \"Say: hi\"\n- |-\n  two\n  lines\n- text: t\n  tool: ''\nscope: >\n  folded\n  text\n";
+    let (sop, _) = parse_sop_file("procedures/x.yaml", text).unwrap();
+    let (_, out) = rewrite("procedures/x.yaml", text, Kind::Yaml).unwrap();
+    assert!(out.starts_with("# header comment\n\nname: X\nagents: [b, vapi:asst_1]\n"), "{out}");
+    let (back, _) = parse_sop_file("procedures/x.yaml", &out).unwrap();
+    assert_eq!(back.canonical_json(), sop.canonical_json());
+    assert_eq!(rewrite("procedures/x.yaml", &out, Kind::Yaml).unwrap().1, out);
+}
+
+#[test]
+fn convert_refuses_what_markdown_cannot_hold() {
+    let text = "name: X\ndescription: |\n  two\n  lines\nprocedureSteps: [a]\n";
+    let err = rewrite("procedures/x.yaml", text, Kind::Markdown).unwrap_err();
+    assert_eq!(codes(&err), ["convert_failed"]);
+    assert!(err[0].message.contains("description would change"), "{}", err[0].message);
+    for step in ["\"Type `required`\"", "|-\n    two\n    lines"] {
+        let text = format!("name: X\nprocedureSteps:\n  - {step}\n");
+        assert_eq!(codes(&rewrite("procedures/x.yaml", &text, Kind::Markdown).unwrap_err()), ["convert_failed"]);
+    }
+}
+
+#[test]
+fn convert_round_trip_keeps_yaml_and_comments() {
+    for (name, text) in read_dir(&sops().join("procedures"), ".yaml") {
+        let path = format!("procedures/{name}.yaml");
+        let (md_path, md) = rewrite(&path, &text, Kind::Markdown).unwrap();
+        assert_eq!(rewrite(&md_path, &md, Kind::Yaml).unwrap(), (path, text), "{name}");
+    }
+    let yaml = "# yaml-language-server: $schema=x\n#\n# Why this SOP exists.\n\nname: X\nprocedureSteps: [a]\n";
+    let (_, md) = rewrite("procedures/x.yaml", yaml, Kind::Markdown).unwrap();
+    assert_eq!(md, "---\n# Why this SOP exists.\n---\n# X\n\n## Steps\n1. a\n");
+    assert_eq!(
+        rewrite("procedures/x.md", &md, Kind::Yaml).unwrap().1,
+        "# Why this SOP exists.\n\nname: X\nprocedureSteps:\n  - a\n"
+    );
+}

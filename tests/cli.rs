@@ -133,6 +133,85 @@ fn example_is_valid_and_its_build_is_current() {
     assert_eq!((out.stdout.as_str(), out.stderr.as_str()), ("0 error(s), 0 warning(s)\n", ""));
     run(0, &["render", &ex, "--check"]);
     run(0, &["check", &ex]);
+    run(0, &["fmt", &ex, "--check"]);
+}
+
+fn built(root: &str, out: &Path) -> std::collections::BTreeMap<String, String> {
+    run(0, &["render", root, "--out", &out.to_string_lossy()]);
+    let files = std::fs::read_dir(out).unwrap().map(|e| e.unwrap().path());
+    files
+        .filter(|p| !p.ends_with("lock.json"))
+        .map(|p| (p.file_name().unwrap().to_string_lossy().into_owned(), read(&p)))
+        .collect()
+}
+
+fn sop_files(root: &str) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(Path::new(root).join("procedures"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn convert_round_trip_keeps_every_prompt_and_tool_json() {
+    for src in [fixture().join("sops"), example()] {
+        let dir = tempfile::tempdir().unwrap();
+        copy_dir(&src, &dir.path().join("s"));
+        let root = dir.path().join("s").to_string_lossy().into_owned();
+        let before = built(&root, &dir.path().join("b0"));
+        let originals: Vec<(String, String)> = sop_files(&root)
+            .into_iter()
+            .map(|n| (n.clone(), read(&Path::new(&root).join("procedures").join(&n))))
+            .collect();
+        let out = run(0, &["convert", &root, "--to", "md"]);
+        assert!(out.stdout.contains(".yaml -> procedures/"), "{}", out.stdout);
+        assert!(sop_files(&root).iter().all(|n| n.ends_with(".md")));
+        assert_eq!(built(&root, &dir.path().join("b1")), before);
+        run(0, &["fmt", &root, "--check"]);
+        run(0, &["convert", &root, "--to", "yaml"]);
+        assert_eq!(built(&root, &dir.path().join("b2")), before);
+        if src == fixture().join("sops") {
+            let now: Vec<(String, String)> = sop_files(&root)
+                .into_iter()
+                .map(|n| (n.clone(), read(&Path::new(&root).join("procedures").join(&n))))
+                .collect();
+            assert_eq!(now, originals, "the fixture's YAML comes back byte for byte");
+        }
+    }
+}
+
+#[test]
+fn convert_some_sops_and_unknown_ids() {
+    let (_dir, root) = repo();
+    let out = run(0, &["convert", &root, "--to", "md", "reservations"]);
+    assert_eq!(out.stdout, "converted procedures/reservations.yaml -> procedures/reservations.md\n");
+    assert!(sop_files(&root).contains(&"allergen-check.yaml".to_string()));
+    let out = run(1, &["convert", &root, "--to", "md", "nope"]);
+    assert!(out.stderr.contains("error [unknown_sop] 'nope' is not an SOP"), "{}", out.stderr);
+    let out = run(0, &["convert", &root, "--to", "md", "reservations"]);
+    assert_eq!(out.stdout, "nothing to convert\n");
+}
+
+#[test]
+fn fmt_check_exit_codes() {
+    let (_dir, root) = repo();
+    let out = run(0, &["fmt", &root, "--check"]);
+    assert_eq!(out.stdout, "0 SOP file(s) would be reformatted, 4 already formatted\n");
+    let file = Path::new(&root).join("procedures/reservations.yaml");
+    edit(&file, "name: Reservations\n", "\nname:   Reservations\ndelivery: prompt\n");
+    let messy = read(&file);
+    let out = run(1, &["fmt", &root, "--check"]);
+    assert_eq!(out.stdout, "would reformat procedures/reservations.yaml\n");
+    assert_eq!(read(&file), messy, "--check writes nothing");
+    let out = run(0, &["fmt", &root]);
+    assert!(out.stdout.starts_with("formatted procedures/reservations.yaml\n"), "{}", out.stdout);
+    assert!(read(&file).starts_with("name: Reservations\nagents:"));
+    run(0, &["fmt", &root, "--check"]);
+    std::fs::write(Path::new(&root).join("procedures/broken.md"), "# Broken\n## Notes\n").unwrap();
+    let out = run(1, &["fmt", &root]);
+    assert!(out.stderr.contains("procedures/broken.md: error [md_unknown_section] line 2:"), "{}", out.stderr);
 }
 
 #[test]
@@ -144,11 +223,11 @@ fn guide_prints_the_format_reference() {
 #[test]
 fn format_reference_lists_every_validation_code() {
     let guide = read(&repo_root().join("FORMAT.md"));
-    let source = read(&repo_root().join("src/workspace.rs"));
-    let re = regex::Regex::new(r#"Issue::(?:error|warning)\(\s*"([a-z_]+)""#).unwrap();
+    let source = ["workspace.rs", "sopfile.rs"].map(|f| read(&repo_root().join("src").join(f))).join("\n");
+    let re = regex::Regex::new(r#"(?:Issue::(?:error|warning)\(|r\.(?:error|warning)\([^"]*?)\s*"([a-z_]+)""#).unwrap();
     let codes: std::collections::BTreeSet<&str> =
         re.captures_iter(&source).map(|c| c.get(1).unwrap().as_str()).collect();
-    assert_eq!(codes.len(), 18, "{codes:?}");
+    assert_eq!(codes.len(), 34, "{codes:?}");
     for code in codes {
         assert!(guide.contains(&format!("`{code}`")), "FORMAT.md doesn't document `{code}`");
     }

@@ -127,7 +127,7 @@ pub fn render_sop_in_prompt(s: &Sop) -> String {
 fn steps_payload(steps: &[Step]) -> Json {
     let items = steps.iter().map(|s| {
         let mut o = Map::new();
-        o.insert("text".into(), json!(s.text));
+        o.insert("text".into(), json!(s.text.trim()));
         if let Some(tool) = &s.tool {
             o.insert("tool".into(), json!(tool));
         }
@@ -139,11 +139,12 @@ fn steps_payload(steps: &[Step]) -> Json {
     Json::Array(items.collect())
 }
 
-/// What get_sop serves for an SOP (before placeholders are filled).
+/// What get_sop serves for an SOP (before placeholders are filled). Text is trimmed, so
+/// whitespace that YAML or Markdown adds around it doesn't reach the agent.
 pub fn sop_payload(s: &Sop) -> Json {
     json!({
         "id": s.id, "name": s.name, "text": render_sop(s, true, true, true),
-        "description": s.description, "scope": s.scope, "guidance": s.guidance,
+        "description": s.description.trim(), "scope": s.scope.trim(), "guidance": s.guidance.trim(),
         "procedureSteps": steps_payload(&s.procedure_steps),
         "forbiddenActions": steps_payload(&s.forbidden_actions),
         "warningSigns": steps_payload(&s.warning_signs),

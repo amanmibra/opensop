@@ -80,7 +80,7 @@ const instructions = readFileSync(`sops/build/${agentId}.prompt.md`, "utf8");
 curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | sh
 ```
 
-Installs a single `opensop` binary into `~/.local/bin` (macOS, Linux, Windows; amd64 and arm64). Pin a version with `OPENSOP_REF=v0.0.5`, or pick the folder with `OPENSOP_INSTALL_DIR`. From source, with Rust: `cargo install --git https://github.com/amanmibra/opensop`. `opensop skills install` writes the import skill for Claude Code, Codex and OpenCode at once.
+Installs a single `opensop` binary into `~/.local/bin` (macOS, Linux, Windows; amd64 and arm64). Pin a version with `OPENSOP_REF=v0.0.6`, or pick the folder with `OPENSOP_INSTALL_DIR`. From source, with Rust: `cargo install --git https://github.com/amanmibra/opensop`. `opensop skills install` writes the import skill for Claude Code, Codex and OpenCode at once.
 
 See the [LiveKit example](examples/livekit-restaurant) for a complete agent, the [Braintrust example](examples/braintrust-evals) for blocking SOP changes that make agents worse, and the [behavior gate](examples/behavior-gate) for running your own tests on just the agents a PR changes.
 
@@ -91,8 +91,26 @@ Prompts are built from three kinds of files:
 | | File | Holds | Reaches agents by |
 |---|---|---|---|
 | 🧱 | `bases/*.md` | identity, tone, context, policy | `inherits:` in the agent, or `agents: "*"` |
-| 📋 | `procedures/*.yaml` | SOPs: goal, steps, never-do's, warning signs, tools | `agents: [...]` in the SOP |
+| 📋 | `procedures/*.md` (or `.yaml`) | SOPs: goal, steps, never-do's, warning signs, tools | `agents: [...]` in the SOP |
 | 🎙️ | `agents/*.yaml` | platform id, values for `{{placeholders}}`, agent-only text | one file per agent |
+
+SOPs are Markdown that reads like a checklist (YAML works too):
+
+```markdown
+---
+agents: "*"
+---
+# Allergen check
+
+**Goal:** Customer leaves knowing whether their order is safe for their allergy.
+
+## Steps
+1. Ask if anyone in the order has a food allergy
+2. Check each item against {{menu_allergen_link}} `tool: lookup_allergens` `required`
+
+## Never
+- Never say an item is "allergen-free" or "safe"
+```
 
 Lock a base or SOP (`locked: true`) and no agent can drop it.
 
@@ -120,6 +138,8 @@ $ opensop plan sops --against main
 | `opensop agents sops` | List agents with their platform ids, SOPs and tools (`--json` for CI) |
 | `opensop affected sops --against main` | Which agents to test for a change, with the SOPs that changed (`--ci` for GitHub Actions) |
 | `opensop check sops` | Duplicated text and conflicting instructions |
+| `opensop fmt sops` | Rewrite SOP files in canonical style (`--check` for CI) |
+| `opensop convert sops --to md` | Rewrite YAML SOPs as Markdown (or `--to yaml`), without changing any prompt |
 | `opensop overlap <dir>` | What a set of existing prompts have in common |
 | `opensop compare sops --originals <dir>` | Confirm built prompts still say everything the originals did |
 | `opensop skills install` | Install the import skill for Claude Code, Codex and OpenCode |
@@ -136,7 +156,7 @@ OpenSOP builds prompts into `sops/build/`, and the simplest setup ships them wit
 ```markdown
 Agent instructions live in `sops/` in the opensop format.
 Run `opensop guide` and read it before editing anything there.
-Finish with `opensop validate sops`, `opensop check sops` and `opensop plan sops --against main`.
+Finish with `opensop fmt sops`, `opensop validate sops`, `opensop check sops` and `opensop plan sops --against main`.
 ```
 
 For editor autocomplete, point `yaml-language-server` at the schemas in [`spec/`](spec).

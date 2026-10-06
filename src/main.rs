@@ -4,6 +4,7 @@ mod analyze;
 mod model;
 mod plan;
 mod render;
+mod sopfile;
 mod text;
 mod workspace;
 
@@ -13,13 +14,14 @@ mod tests;
 use anyhow::{bail, Context};
 use clap::{Parser, Subcommand, ValueEnum};
 use render::{render_workspace, write_build, Build};
+use sopfile::Kind;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use text::{pretty_json, tidy};
-use workspace::{is_source, load, load_files, read_text, Issue, Issues};
+use workspace::{is_source, load, load_files, read_files, read_text, stem, Issue, Issues};
 
 /// The format reference, printed by `opensop guide`.
 pub const FORMAT_MD: &str = include_str!("../FORMAT.md");
@@ -116,6 +118,22 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Rewrite SOP files (Markdown and YAML) in canonical style
+    Fmt {
+        #[arg(default_value = ".")]
+        root: PathBuf,
+        /// List files that would change and fail if any, without writing
+        #[arg(long)]
+        check: bool,
+    },
+    /// Rewrite SOPs as Markdown or YAML (all of them, or the ids given)
+    Convert {
+        root: PathBuf,
+        #[arg(long, value_enum)]
+        to: SopFormat,
+        /// SOP ids [default: every SOP not already in that format]
+        ids: Vec<String>,
+    },
     /// Install the opensop skills for coding agents
     Skills {
         action: SkillsAction,
@@ -135,6 +153,12 @@ enum Format {
     Ids,
     PlatformIds,
     Json,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum SopFormat {
+    Md,
+    Yaml,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -302,10 +326,91 @@ fn run(command: Command) -> anyhow::Result<ExitCode> {
                 print!("{}", analyze::check_text(&findings));
             }
         }
+        Command::Fmt { root, check } => return fmt(&root, check),
+        Command::Convert { root, to, ids } => {
+            let to = match to {
+                SopFormat::Md => Kind::Markdown,
+                SopFormat::Yaml => Kind::Yaml,
+            };
+            convert(&root, to, &ids)?;
+        }
         Command::Skills { action: SkillsAction::Install, agent, dir } => install_skills(&agent, dir)?,
         Command::Guide => print!("{FORMAT_MD}"),
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// The SOP files of a folder: (relative path, text).
+fn sop_files(root: &Path) -> anyhow::Result<Vec<(String, String)>> {
+    let files = read_files(root)?;
+    if !files.contains_key("opensop.yaml") {
+        return Err(Issues(vec![Issue::error("missing_config", "", "opensop.yaml not found")]).into());
+    }
+    Ok(files.into_iter().filter(|(p, _)| p.starts_with("procedures/")).collect())
+}
+
+fn fmt(root: &Path, check: bool) -> anyhow::Result<ExitCode> {
+    let (mut changed, mut errors, mut total) = (vec![], vec![], 0);
+    for (path, text) in sop_files(root)? {
+        total += 1;
+        match sopfile::rewrite(&path, &text, Kind::of(&path)) {
+            Ok((_, new)) if new != text => changed.push((path, new)),
+            Ok(_) => {}
+            Err(e) => errors.extend(e),
+        }
+    }
+    if !errors.is_empty() {
+        return Err(Issues(errors).into());
+    }
+    for (path, new) in &changed {
+        if check {
+            println!("would reformat {path}");
+        } else {
+            std::fs::write(root.join(path), new)?;
+            println!("formatted {path}");
+        }
+    }
+    let unchanged = total - changed.len();
+    if check && !changed.is_empty() {
+        eprintln!("{} file(s) need `opensop fmt`; {unchanged} already formatted", changed.len());
+        return Ok(ExitCode::FAILURE);
+    }
+    let done = if check { "would be reformatted" } else { "reformatted" };
+    println!("{} SOP file(s) {done}, {unchanged} already formatted", changed.len());
+    Ok(ExitCode::SUCCESS)
+}
+
+fn convert(root: &Path, to: Kind, ids: &[String]) -> anyhow::Result<()> {
+    let files = sop_files(root)?;
+    let mut errors = vec![];
+    for id in ids.iter().filter(|id| !files.iter().any(|(p, _)| stem(p) == id.as_str())) {
+        errors.push(Issue::error("unknown_sop", "", format!("'{id}' is not an SOP in {}", root.display())));
+    }
+    let mut out = vec![];
+    for (path, text) in &files {
+        if Kind::of(path) == to || !(ids.is_empty() || ids.iter().any(|id| id == stem(path))) {
+            continue;
+        }
+        match sopfile::rewrite(path, text, to) {
+            Ok((new_path, _)) if files.iter().any(|(p, _)| *p == new_path) => {
+                errors.push(Issue::error("duplicate_file", path, format!("{new_path} already exists")));
+            }
+            Ok((new_path, new)) => out.push((path, new_path, new)),
+            Err(e) => errors.extend(e),
+        }
+    }
+    if !errors.is_empty() {
+        return Err(Issues(errors).into());
+    }
+    for (old, new_path, new) in &out {
+        std::fs::write(root.join(new_path), new)?;
+        std::fs::remove_file(root.join(old))?;
+        println!("converted {old} -> {new_path}");
+    }
+    if out.is_empty() {
+        println!("nothing to convert");
+    }
+    Ok(())
 }
 
 fn append(path: &str, text: &str) -> anyhow::Result<()> {

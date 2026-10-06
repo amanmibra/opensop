@@ -27,10 +27,10 @@ livekit-restaurant/
       brand-voice-es.md              la-casita only: the same voice, in Spanish; also locked
       pizza-context.md               only pizza places; builds on restaurant-host
       closing.md                     every agent; goes at the very end
-    procedures/                    SOPs
-      allergen-check.yaml            every agent; uses the lookup_allergens tool
-      delivery-handling.yaml         every agent except Sakura (she opts out)
-      reservations.yaml              Sakura and Luigi's only
+    procedures/                    SOPs, in Markdown (recommended) or YAML
+      allergen-check.md              every agent; uses the lookup_allergens tool
+      delivery-handling.yaml         every agent except Sakura (she opts out); the same format in YAML
+      reservations.md                Sakura and Luigi's only
     agents/                        one file per restaurant
       tonys-pizza.yaml
       luigis-trattoria.yaml
@@ -45,7 +45,7 @@ livekit-restaurant/
   package.json
 ```
 
-Every file in `sops/` has comments explaining its fields. Start with `agents/sakura-sushi.yaml`, then open `build/sakura-sushi.prompt.md` to see what it turned into.
+Every file in `sops/` has comments explaining its fields (in a Markdown SOP, they're in the front matter, so they never reach a prompt). Start with `agents/sakura-sushi.yaml`, then open `build/sakura-sushi.prompt.md` to see what it turned into.
 
 ## How a restaurant's prompt is put together
 
@@ -70,13 +70,37 @@ Speak warmly and briefly...                       ← bases/brand-voice.md (ever
 Sakura is an omakase and sushi counter...         ← Sakura's own instructions
 
 ## Procedures
-### Allergen check                               ← procedures/allergen-check.yaml (every agent)
-### Reservations                                 ← procedures/reservations.yaml (Sakura is on its list)
+### Allergen check                               ← procedures/allergen-check.md (every agent)
+### Reservations                                 ← procedures/reservations.md (Sakura is on its list)
 
 Before hanging up, repeat the order total...      ← bases/closing.md (every agent, at the end)
 ```
 
 No delivery section, because Sakura excluded it. No pizza context, because she doesn't inherit it. Tony's prompt gets both.
+
+## An SOP
+
+SOPs are written in Markdown: settings in the front matter, then the name, the goal (`**Goal:**`), when it applies (`**When:**`), and the `## Steps`, `## Never` and `## Warning signs` lists. `procedures/reservations.md`:
+
+```markdown
+---
+agents: [sakura-sushi, luigis-trattoria]
+---
+# Reservations
+
+**Goal:** The customer has a confirmed table, or knows exactly why one isn't available.
+**When:** The customer wants to book, change or cancel a table.
+
+## Steps
+1. Ask for party size, date and time
+2. Check availability `tool: check_reservations`
+3. Confirm the booking details and the name on the reservation
+
+## Never
+- Never double-book a table
+```
+
+`` `tool: check_reservations` `` renders as "Use the `check_reservations` tool." and lists the tool in `build/lock.json`. Every SOP here uses the default `delivery: prompt`, so the whole SOP goes in the prompt; `auto` or `tool` would leave part of it out and have the agent fetch it with a `get_sop` tool, which this example agent doesn't register. `delivery-handling.yaml` shows the same format in YAML; `opensop convert sops --to md` rewrites YAML SOPs as Markdown, and `opensop fmt sops` keeps both tidy.
 
 ## One restaurant needs a different version of a locked block
 

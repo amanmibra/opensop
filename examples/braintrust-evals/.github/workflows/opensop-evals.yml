@@ -28,7 +28,7 @@ jobs:
 
       - name: Install OpenSOP
         run: |
-          curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | OPENSOP_REF=v0.0.5 sh
+          curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | OPENSOP_REF=v0.0.6 sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Run evals for the agents this PR changes

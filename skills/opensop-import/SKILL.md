@@ -113,21 +113,41 @@ Create `sops/opensop.yaml`, `sops/bases/`, `sops/procedures/`, `sops/agents/`, f
 | Said only at the end of the call | A base with `position: bottom` |
 | Facts about one agent only | That agent's `instructions` |
 
-**SOPs.** A passage is a procedure when it describes a situation and the steps to handle it ("If the caller wants to book a table, ask for…"). For each:
-- `name`: a short title.
-- `scope`: the situation that triggers it, in the original's words.
-- `description`: the goal. Use the original's words if it states one; otherwise the sentence the user approved.
-- `procedureSteps`: the ordered actions, in the original wording.
-- `forbiddenActions`: "never / don't / do not" rules for this procedure.
-- `warningSigns`: "if the caller says X, transfer / escalate" rules.
-- `guidance`: anything else in the passage.
-- If a step uses a tool, set `tool:` to the tool's exact name from the agent code.
-- `agents`: which agents had this procedure.
+**SOPs.** A passage is a procedure when it describes a situation and the steps to handle it ("If the caller wants to book a table, ask for…"). Write each one as Markdown, `sops/procedures/<id>.md`:
+
+```markdown
+---
+agents: [tonys-pizza, luigis-trattoria]
+---
+# Reservations
+
+**Goal:** The customer has a confirmed table, or knows exactly why one isn't available.
+**When:** The customer wants to book, change or cancel a table.
+
+Any other text from the passage goes here, as guidance.
+
+## Steps
+1. Ask for party size, date and time
+2. Check availability `tool: check_reservations`
+
+## Never
+- Never double-book a table
+
+## Warning signs
+- The caller wants to book for more than 12; transfer to {{staff_transfer}} `tool: transfer_to_staff`
+```
+
+- Front matter: settings only (`agents`: which agents had this procedure; `exclude`, `locked`, `delivery` if needed).
+- `# ` name: a short title, the first line after the front matter.
+- `**When:**` the situation that triggers it, in the original's words. `**Goal:**` the goal: the original's words if it states one, otherwise the sentence the user approved.
+- `## Steps` (required, at least one): the ordered actions, in the original wording. `## Never`: "never / don't / do not" rules for this procedure. `## Warning signs`: "if the caller says X, transfer / escalate" rules. Only list items under these.
+- If a step uses a tool, end it with `` `tool: <name>` `` using the tool's exact name from the agent code; add `` `required` `` if the call must always happen.
+- Use exactly these names; anything else (`**Objective:**`, `## Notes`, `###` headings) is an error.
 
 **Rules while writing:**
 - Preserve wording. Don't improve, shorten or merge instructions during import; that's a separate, reviewed step. Allowed edits: replacing a value with a `{{placeholder}}`, and removing a sentence that a shared block now provides.
 - Don't drop anything. If you can't place a sentence, put it in that agent's `instructions`.
-- Quote any YAML string containing `: ` (colon space), or use a `|` block.
+- In YAML files (agents, `opensop.yaml`), quote any string containing `: ` (colon space), or use a `|` block.
 - Convert code placeholders like `${restaurantName}` to `{{restaurant_name}}` with a value per agent.
 
 If something comes up that the plan didn't cover and that changes what an agent would say, stop and ask before continuing.
@@ -135,6 +155,7 @@ If something comes up that the plan didn't cover and that changes what an agent 
 ## 5. Validate, render, compare. Repeat until clean.
 
 ```
+opensop fmt sops
 opensop validate sops
 opensop render sops
 opensop compare sops --originals sops/originals
@@ -154,7 +175,7 @@ This finds duplicated sentences, the same sentence with different numbers, "do X
 
 ## 7. Checkpoint 2: the result summary
 
-Show one screen, then ask before committing:
+Run `opensop fmt sops` once more (then `opensop render sops` if it changed anything) so the files are in canonical style. Then show one screen and ask before committing:
 
 ```
 Imported 30 agents into sops/

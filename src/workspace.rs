@@ -20,7 +20,7 @@ impl Issue {
     pub fn error(code: &'static str, path: &str, message: impl Into<String>) -> Self {
         Issue { code, message: message.into(), path: path.to_string(), warning: false }
     }
-    fn warning(code: &'static str, path: &str, message: impl Into<String>) -> Self {
+    pub fn warning(code: &'static str, path: &str, message: impl Into<String>) -> Self {
         Issue { warning: true, ..Issue::error(code, path, message) }
     }
 }
@@ -55,6 +55,8 @@ pub struct Workspace {
     pub bases: Vec<Base>,
     pub sops: Vec<Sop>,
     pub agents: Vec<Agent>,
+    /// Warnings found while reading files (e.g. an empty Markdown section).
+    pub warnings: Vec<Issue>,
 }
 
 impl Workspace {
@@ -69,9 +71,6 @@ impl Workspace {
 pub fn base_path(id: &str) -> String {
     format!("bases/{id}.md")
 }
-pub fn sop_path(id: &str) -> String {
-    format!("procedures/{id}.yaml")
-}
 pub fn agent_path(id: &str) -> String {
     format!("agents/{id}.yaml")
 }
@@ -81,7 +80,8 @@ pub fn is_source(rel: &str) -> bool {
     let (folder, name) = rel.rsplit_once('/').unwrap_or(("", rel));
     rel == "opensop.yaml"
         || (folder == "bases" && name.ends_with(".md"))
-        || ((folder == "procedures" || folder == "agents") && name.ends_with(".yaml"))
+        || (folder == "procedures" && (name.ends_with(".yaml") || name.ends_with(".md")))
+        || (folder == "agents" && name.ends_with(".yaml"))
 }
 
 /// Text with \r\n and \r turned into \n.
@@ -153,15 +153,19 @@ pub fn load_files(files: &BTreeMap<String, String>) -> Result<Workspace, Issues>
             Err(errs) => field_errors(errs, path, &mut issues),
         }
     }
+    let mut seen: BTreeMap<&str, &str> = BTreeMap::new();
     for (path, text) in in_folder("procedures") {
-        let Some(mut map) = load_yaml(text, path, &mut issues) else { continue };
-        set_id(&mut map, path, &mut issues);
-        if !check_steps(&map, path, &mut issues) {
+        if let Some(other) = seen.insert(stem(path), path) {
+            let msg = format!("{other} and {path} are the same SOP '{}'; keep one", stem(path));
+            issues.push(Issue::error("duplicate_file", path, msg));
             continue;
         }
-        match model::parse_sop(&map) {
-            Ok(sop) => ws.sops.push(sop),
-            Err(errs) => field_errors(errs, path, &mut issues),
+        match parse_sop_file(path, text) {
+            Ok((sop, warnings)) => {
+                ws.sops.push(sop);
+                ws.warnings.extend(warnings);
+            }
+            Err(errs) => issues.extend(errs),
         }
     }
     for (path, text) in in_folder("agents") {
@@ -179,12 +183,46 @@ pub fn load_files(files: &BTreeMap<String, String>) -> Result<Workspace, Issues>
     }
 }
 
+/// Reads one SOP file, YAML or Markdown, on its own. Ok carries the SOP and its warnings.
+pub fn parse_sop_file(path: &str, text: &str) -> Result<(Sop, Vec<Issue>), Vec<Issue>> {
+    let (mut issues, mut warnings) = (vec![], vec![]);
+    let markdown = path.ends_with(".md");
+    let map = if markdown {
+        crate::sopfile::parse_markdown(text, path, &mut issues, &mut warnings)
+    } else {
+        load_yaml(text, path, &mut issues).filter(|map| check_steps(map, path, &mut issues))
+    };
+    let Some(mut map) = map else { return Err(issues) };
+    set_id(&mut map, path, &mut issues);
+    let no_steps = match map.get("procedureSteps") {
+        None | Some(Value::Null) => true,
+        Some(Value::Sequence(items)) => items.is_empty(),
+        _ => false,
+    };
+    if no_steps && !markdown {
+        let line = text.lines().position(|l| l.starts_with("procedureSteps:"));
+        let at = line.map(|n| format!("line {}: ", n + 1)).unwrap_or_default();
+        let msg = format!("{at}no steps; every SOP needs at least one entry in procedureSteps");
+        issues.push(Issue::error("missing_steps", path, msg));
+    }
+    if !issues.is_empty() {
+        return Err(issues);
+    }
+    match model::parse_sop(&map) {
+        Ok(sop) => Ok((Sop { file: path.to_string(), ..sop }, warnings)),
+        Err(errs) => {
+            field_errors(errs, path, &mut issues);
+            Err(issues)
+        }
+    }
+}
+
 fn field_errors(errs: Vec<String>, path: &str, issues: &mut Vec<Issue>) {
     issues.extend(errs.into_iter().map(|e| Issue::error("invalid_field", path, e)));
 }
 
 /// Splits `---` front matter from the body.
-fn split_front_matter(text: &str) -> (&str, &str) {
+pub fn split_front_matter(text: &str) -> (&str, &str) {
     if text.starts_with("---\n") {
         if let Some(i) = text[3..].find("\n---") {
             let end = i + 3;
@@ -199,7 +237,7 @@ const COLON_HINT: &str =
     " Usually a colon followed by a space inside unquoted text: put the text in quotes, or use a | block.";
 
 /// Parses a YAML mapping, or reports the problem. An empty file is an empty mapping.
-fn load_yaml(text: &str, path: &str, issues: &mut Vec<Issue>) -> Option<Mapping> {
+pub fn load_yaml(text: &str, path: &str, issues: &mut Vec<Issue>) -> Option<Mapping> {
     match serde_yaml_ng::from_str::<Value>(text) {
         Err(err) => {
             let mut msg = err.to_string().split_whitespace().collect::<Vec<_>>().join(" ");
@@ -277,7 +315,7 @@ pub fn targets(t: &Targeting, agent: &Agent) -> bool {
 
 /// References, cycles, locks and variables.
 pub fn validate(ws: &Workspace) -> Vec<Issue> {
-    let mut issues = vec![];
+    let mut issues = ws.warnings.clone();
     let agent_names: BTreeSet<String> = ws.agents.iter().flat_map(|a| [a.id.clone(), a.platform_ref()]).collect();
 
     let base_ids: BTreeSet<&str> = ws.bases.iter().map(|b| b.id.as_str()).collect();
@@ -302,7 +340,7 @@ pub fn validate(ws: &Workspace) -> Vec<Issue> {
         .bases
         .iter()
         .map(|b| (base_path(&b.id), &b.targeting))
-        .chain(ws.sops.iter().map(|s| (sop_path(&s.id), &s.targeting)));
+        .chain(ws.sops.iter().map(|s| (s.file.clone(), &s.targeting)));
     for (path, t) in blocks {
         let listed = if t.all { &[][..] } else { &t.agents[..] };
         for (field, names) in [("agents", listed), ("exclude", &t.exclude[..])] {
@@ -330,7 +368,7 @@ pub fn validate(ws: &Workspace) -> Vec<Issue> {
     for s in ws.sops.iter().filter(|s| s.description.trim().is_empty()) {
         issues.push(Issue::warning(
             "missing_goal",
-            &sop_path(&s.id),
+            &s.file,
             "no description (goal); QA can't judge whether the goal was met",
         ));
     }
