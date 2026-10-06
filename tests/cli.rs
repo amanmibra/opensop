@@ -115,7 +115,7 @@ fn bare_sopc_compiles_the_default_folder() {
     assert_eq!(out.stdout, "wrote 6 files to dist\n");
     let out = sopc_in(dir.path(), &["--out", "dist", "--check"], &[]);
     assert_eq!(out.stdout, "dist is up to date\n");
-    for cmd in [&["validate"][..], &["check"], &["fmt", "--check"], &["agents"]] {
+    for cmd in [&["validate"][..], &["lint"], &["fmt", "--check"], &["agents"]] {
         assert_eq!(sopc_in(dir.path(), cmd, &[]).code, 0, "{cmd:?}");
     }
     // An explicit folder wins over the default one.
@@ -161,7 +161,7 @@ fn default_folder_is_sops_then_the_current_one() {
 fn the_folder_is_a_flag_on_every_command() {
     let (dir, _) = repo();
     // --dir / -C goes before or after the command.
-    for args in [&["--dir", "sops", "validate"][..], &["validate", "--dir", "sops"], &["-C", "sops", "check"]] {
+    for args in [&["--dir", "sops", "validate"][..], &["validate", "--dir", "sops"], &["-C", "sops", "lint"]] {
         assert_eq!(sopc_in(dir.path(), args, &[]).code, 0, "{args:?}");
     }
     // Typos are unknown commands with a suggestion, never folders.
@@ -248,7 +248,7 @@ fn example_is_valid_and_its_build_is_current() {
     let out = run(0, &["validate", "--dir", &ex]);
     assert_eq!((out.stdout.as_str(), out.stderr.as_str()), ("0 error(s), 0 warning(s)\n", ""));
     run(0, &["--dir", &ex, "--check"]);
-    run(0, &["check", "--dir", &ex]);
+    run(0, &["lint", "--dir", &ex]);
     run(0, &["fmt", "--dir", &ex, "--check"]);
 }
 
@@ -461,11 +461,11 @@ fn compare_exit_code() {
 }
 
 #[test]
-fn overlap_and_check_run() {
+fn overlap_and_lint_run() {
     let out = run(0, &["overlap", fixture().join("originals").to_str().unwrap()]);
     assert!(out.stdout.starts_with("3 prompts: luigis-trattoria, sakura-sushi, tonys-pizza\n"));
     assert!(out.stdout.contains("Near-copies"));
-    let out = run(0, &["check", "--dir", fixture().join("sops").to_str().unwrap(), "--json"]);
+    let out = run(0, &["lint", "--dir", fixture().join("sops").to_str().unwrap(), "--json"]);
     assert_eq!(out.stdout, "[]\n");
 }
 
@@ -478,7 +478,7 @@ fn skills_install_covers_claude_code_codex_and_opencode() {
     for folder in [".claude/skills", ".agents/skills"] {
         assert_eq!(read(&dir.path().join(folder).join("sopc-import/SKILL.md")), skill);
     }
-    for cmd in ["sopc overlap", "sopc compare", "sopc check", "sopc guide"] {
+    for cmd in ["sopc overlap", "sopc compare", "sopc lint", "sopc guide"] {
         assert!(skill.contains(cmd), "skill doesn't mention {cmd}");
     }
     for s in ["/sopc-import", "$sopc-import", "OpenCode"] {
@@ -501,6 +501,7 @@ fn argument_errors_exit_2() {
     for args in [
         &["--foo"][..],
         &["sops"],
+        &["check"],
         &["validate", "--jso"],
         &["affected", "--format", "xx"],
         &["compare"],

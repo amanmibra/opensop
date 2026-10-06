@@ -170,7 +170,7 @@ If `sopc fmt` lists a file it won't rewrite because that would remove comments, 
 ## 6. Check for conflicts
 
 ```
-sopc check
+sopc lint
 ```
 
 This finds duplicated sentences, the same sentence with different numbers, "do X" vs "never X", near-identical sentences that drifted, and unused variables. Then read each compiled prompt in `sops/build/` yourself for contradictions the CLI can't see (e.g. one block offers delivery while the agent says pickup only).

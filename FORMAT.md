@@ -302,7 +302,7 @@ Neither command changes any agent's prompt or `get_sop` payload; each checks thi
 3. Change only files in `bases/`, `procedures/`, `agents/` and `sopc.yaml`. Never edit `build/`.
 4. Run `sopc validate` and fix every error. Commands use `sops/` (or the current folder) by default; if the root is elsewhere, pass it to each one, e.g. `sopc validate path/to/root`.
 5. Run `sopc plan` (it compares with the default branch; `--against REF` to choose) and confirm that only the agents you meant to change appear.
-6. Run `sopc check`. If your change introduced a duplicate or conflict, fix it; report pre-existing ones to the user.
+6. Run `sopc lint`. If your change introduced a duplicate or conflict, fix it; report pre-existing ones to the user.
 7. Run `sopc fmt`, then `sopc` so `build/` matches.
 8. Never pass `--yes` to `sopc fmt` or `sopc convert` on your own. If one of them lists a file it won't rewrite because comments would be lost, tell the user and let them decide.
 

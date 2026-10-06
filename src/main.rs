@@ -58,10 +58,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Check the files for errors and print every problem
+    /// Find errors in the files and print every problem
     Validate,
     /// Find duplicated text and conflicting instructions in each agent's prompt
-    Check {
+    Lint {
         #[arg(long)]
         json: bool,
     },
@@ -368,14 +368,14 @@ fn run(command: Command, dir: Option<PathBuf>) -> anyhow::Result<ExitCode> {
                 return Ok(ExitCode::FAILURE);
             }
         }
-        Command::Check { json } => {
+        Command::Lint { json } => {
             let root = root()?;
-            let findings = analyze::check(&load(&root)?);
+            let findings = analyze::lint(&load(&root)?);
             if json {
                 let list = findings.iter().map(|f| f.to_json()).collect();
                 println!("{}", pretty_json(&serde_json::Value::Array(list), true));
             } else {
-                print!("{}", analyze::check_text(&findings));
+                print!("{}", analyze::lint_text(&findings));
             }
         }
         Command::Fmt { check, yaml, yes } => return fmt(&root()?, check, yaml, yes),

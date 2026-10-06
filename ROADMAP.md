@@ -7,7 +7,7 @@ sopc is the format for writing, versioning and building agent instructions, plus
 - **Format.** Bases (inherited prompt text, lockable), SOPs (goal, scope, guidance, steps, forbidden actions, warning signs, tools) and agents keyed by platform id. JSON Schemas in `spec/`; reference in [FORMAT.md](FORMAT.md).
 - **Build and validate.** One full prompt per agent, `lock.json` with block hashes and referenced tools, clear errors (including YAML colon traps).
 - **`plan`.** Which agents a change touches and because of which block, with a prompt diff per agent.
-- **`check`.** Duplicated text, number conflicts, "always X" vs "never X", unused variables.
+- **`lint`.** Duplicated text, number conflicts, "always X" vs "never X", unused variables.
 - **Import.** The `/sopc-import` skill for coding agents, with `overlap` and `compare` to prove nothing was lost.
 - **LiveKit example.** A TypeScript agent that loads its prompt from the build, with mock tools ([examples/livekit-restaurant](examples/livekit-restaurant)).
 

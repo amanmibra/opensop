@@ -1,5 +1,5 @@
 //! Deterministic text analysis for importing and reviewing prompts: `overlap`, `compare` and
-//! `check`. Prompts are split into sentence-sized units and compared by their words.
+//! `lint`. Prompts are split into sentence-sized units and compared by their words.
 
 use crate::model::Agent;
 use crate::render::{fill_variables, find_variables, render_step, resolve_bases, resolve_sops, Build, StepKind};
@@ -357,7 +357,7 @@ pub fn compare_text(results: &[Comparison], build: &Build) -> String {
     out.join("\n") + "\n"
 }
 
-// --- check -----------------------------------------------------------------------------------------
+// --- lint ------------------------------------------------------------------------------------------
 
 /// A duplicate or mechanical conflict. Sources are (block label, text).
 #[derive(Debug)]
@@ -444,7 +444,7 @@ fn agent_texts(ws: &Workspace, agent: &Agent, split: bool) -> Vec<(String, Strin
 }
 
 /// Duplicated text and mechanical conflicts within each agent's prompt, and unused variables.
-pub fn check(ws: &Workspace) -> Vec<Finding> {
+pub fn lint(ws: &Workspace) -> Vec<Finding> {
     let mut findings: Vec<(String, Finding)> = vec![];
     let mut agents: Vec<&Agent> = ws.agents.iter().collect();
     agents.sort_by(|a, b| a.id.cmp(&b.id));
@@ -501,7 +501,7 @@ pub fn check(ws: &Workspace) -> Vec<Finding> {
     findings.into_iter().map(|(_, f)| f).collect()
 }
 
-pub fn check_text(findings: &[Finding]) -> String {
+pub fn lint_text(findings: &[Finding]) -> String {
     if findings.is_empty() {
         return "No duplicates or mechanical conflicts found.\n".into();
     }

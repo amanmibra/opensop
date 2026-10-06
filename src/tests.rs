@@ -1,7 +1,7 @@
 //! Tests of the format, rendering, plans and analysis, on tests/fixtures/restaurants.
 //! Command-line tests are in tests/cli.rs.
 
-use crate::analyze::{check, compare, overlap, units};
+use crate::analyze::{compare, lint, overlap, units};
 use crate::model::*;
 use crate::plan::{affected, make_plan, read_snapshot, snapshot};
 use crate::render::{render_workspace, write_build, Build};
@@ -600,7 +600,7 @@ fn compare_reports_changed_missing_and_reworded() {
 
 #[test]
 fn check_is_clean_on_the_fixture() {
-    assert!(check(&ws(&sops())).is_empty());
+    assert!(lint(&ws(&sops())).is_empty());
 }
 
 #[test]
@@ -622,7 +622,7 @@ fn check_finds_mechanical_conflicts() {
         "procedureSteps:",
         "forbiddenActions:\n  - Never confirm the delivery address\nprocedureSteps:",
     );
-    let findings = check(&ws(r.root()));
+    let findings = lint(&ws(r.root()));
     let by_code: BTreeMap<&str, &crate::analyze::Finding> = findings.iter().map(|f| (f.code, f)).collect();
     assert_eq!(
         by_code.keys().copied().collect::<Vec<_>>(),
@@ -644,7 +644,7 @@ fn check_finds_mechanical_conflicts() {
 fn check_reports_a_shared_conflict_once_for_all_agents() {
     let r = Repo::new();
     r.append("bases/closing.md", " Before hanging up, never repeat the order total and the pickup or delivery time.\n");
-    let findings = check(&ws(r.root()));
+    let findings = lint(&ws(r.root()));
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].code, "negation_conflict");
     assert_eq!(findings[0].agents, ["luigis-trattoria", "sakura-sushi", "tonys-pizza"]);
@@ -658,9 +658,9 @@ fn check_finds_a_number_conflict_inside_a_longer_sentence() {
         "Pickup only after 10pm. Cash and card.",
         "Pickup and delivery until 11pm. Delivery until 10pm on Sundays. Cash and card.",
     );
-    assert!(check(&ws(r.root())).is_empty(), "different statements: no conflict");
+    assert!(lint(&ws(r.root())).is_empty(), "different statements: no conflict");
     r.edit("agents/tonys-pizza.yaml", "Delivery until 10pm on Sundays.", "Delivery until 10pm.");
-    let findings = check(&ws(r.root()));
+    let findings = lint(&ws(r.root()));
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].code, "numeric_conflict");
 }
