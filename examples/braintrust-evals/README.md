@@ -79,11 +79,11 @@ When a real call goes wrong, turn it into a case. Every later change to that SOP
 3. Set `SOPC_EVAL_MODEL` in the workflow to the model your agents run on.
 4. In your branch protection rules, make the **sopc evals** check required. That's what blocks the merge.
 
-Try it locally first, without Braintrust (uses `OPENAI_API_KEY`, results stay on your machine):
+Try it locally first, without Braintrust (uses `OPENAI_API_KEY`, results stay on your machine). It reads `sops/` and `evals/cases.yaml` unless you pass `--sops` and `--cases`:
 
 ```sh
-python evals/run_evals.py --sops sops --cases evals/cases.yaml --base main --dry-run   # what would run
-python evals/run_evals.py --sops sops --cases evals/cases.yaml --base main             # run it
+python evals/run_evals.py --base main --dry-run   # what would run
+python evals/run_evals.py --base main             # run it
 ```
 
 ## Limits

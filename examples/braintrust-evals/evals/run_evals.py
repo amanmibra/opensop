@@ -1,6 +1,6 @@
 """Run Braintrust evals for the agents a sopc change touches, and fail on regressions.
 
-    python evals/run_evals.py --sops sops --cases evals/cases.yaml --base origin/main
+    python evals/run_evals.py --base origin/main   # --sops and --cases default to sops/ and evals/cases.yaml
 
 1. Builds every agent's prompt twice with the sopc CLI: at --base (e.g. the PR's target
    branch, checked out in a temporary git worktree) and as it is now.
@@ -56,7 +56,7 @@ class Case:
 
 @dataclass
 class Built:
-    """One agent's built prompt, from `sopc render` and `sopc agents --json`."""
+    """One agent's built prompt, from `sopc <root> --out <dir>` and `sopc agents --json`."""
 
     prompt: str
     tools: list[str]
@@ -73,8 +73,8 @@ def sopc(*args: str) -> str:
 
 
 def build(root: Path, out: Path) -> dict[str, Built]:
-    """Render every agent's prompt in a sopc root into `out`."""
-    sopc("render", str(root), "--out", str(out))
+    """Compile every agent's prompt in a sopc root into `out`."""
+    sopc(str(root), "--out", str(out))
     agents = json.loads(sopc("agents", str(root), "--json"))
     return {
         a["id"]: Built((out / f"{a['id']}.prompt.md").read_text(), a["tools"], a["sops"], a["hash"])

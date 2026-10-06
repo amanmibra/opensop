@@ -27,8 +27,8 @@ on:
         default: ""
 
 env:
-  SOPC_ROOT: sops
-  SOPC_VERSION: v0.0.6 # a sopc release tag
+  SOPC_ROOT: "" # your sopc folder; blank = sops/ (or the repo root if sopc.yaml is there)
+  SOPC_VERSION: v0.0.7 # a sopc release tag
 
 jobs:
   detect:
@@ -52,9 +52,11 @@ jobs:
       - name: Work out which agents to test
         id: agents
         env:
-          AGAINST: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
+          # A PR: compare with its base branch. By hand: compare with HEAD itself, so nothing
+          # changed and --all-if-none tests every agent (unless agents were given).
+          AGAINST: ${{ github.base_ref && format('origin/{0}', github.base_ref) || 'HEAD' }}
           REQUESTED: ${{ inputs.agents }}
-        run: sopc affected "$SOPC_ROOT" ${AGAINST:+--against "$AGAINST"} --agents "$REQUESTED" --all-if-none --ci
+        run: sopc affected ${SOPC_ROOT:+"$SOPC_ROOT"} --against "$AGAINST" --agents "$REQUESTED" --all-if-none --ci
 
   test:
     needs: detect

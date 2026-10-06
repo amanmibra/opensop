@@ -5,7 +5,7 @@ description: Convert existing voice/task agent prompts into sopc files (shared b
 
 # Import existing prompts into sopc
 
-You are turning a team's hand-written agent prompts into a sopc folder: shared text written once, procedures as SOPs, and a short file per agent. The rendered prompts must say everything the originals said. You do the judgment; the `sopc` CLI does the counting and checking; the user makes the decisions.
+You are turning a team's hand-written agent prompts into a sopc folder: shared text written once, procedures as SOPs, and a short file per agent. The compiled prompts must say everything the originals said. You do the judgment; the `sopc` CLI does the counting and checking; the user makes the decisions.
 
 The flow has two approval checkpoints:
 
@@ -152,32 +152,34 @@ Any other text from the passage goes here, as guidance.
 
 If something comes up that the plan didn't cover and that changes what an agent would say, stop and ask before continuing.
 
-## 5. Validate, render, compare. Repeat until clean.
+## 5. Validate, compile, compare. Repeat until clean.
+
+Run these from the repo root. They use `sops/` by default; if the folder is somewhere else, pass it to each command (`sopc path/to/sops`, `sopc validate path/to/sops`).
 
 ```
-sopc fmt sops
-sopc validate sops
-sopc render sops
-sopc compare sops --originals sops/originals
+sopc fmt
+sopc validate
+sopc
+sopc compare --originals sops/originals
 ```
 
 If `sopc fmt` lists a file it won't rewrite because that would remove comments, don't add `--yes`: leave the file, or move the comment's content somewhere it survives, and mention it to the user. Only use `--yes` if the user approves removing exactly those comments.
 
-`compare` fails if any sentence from an original is **missing** or **changed** in the rendered prompt, and shows the changed words. Fix those; they're lost or altered instructions. **Reworded** lines (most words present, e.g. one sentence split into steps) don't fail; check each one says the same thing. **Added** lines should only be SOP headings and approved goals. Repeat until every agent passes.
+`compare` fails if any sentence from an original is **missing** or **changed** in the compiled prompt, and shows the changed words. Fix those; they're lost or altered instructions. **Reworded** lines (most words present, e.g. one sentence split into steps) don't fail; check each one says the same thing. **Added** lines should only be SOP headings and approved goals. Repeat until every agent passes.
 
 ## 6. Check for conflicts
 
 ```
-sopc check sops
+sopc check
 ```
 
-This finds duplicated sentences, the same sentence with different numbers, "do X" vs "never X", near-identical sentences that drifted, and unused variables. Then read each rendered prompt in `sops/build/` yourself for contradictions the CLI can't see (e.g. one block offers delivery while the agent says pickup only).
+This finds duplicated sentences, the same sentence with different numbers, "do X" vs "never X", near-identical sentences that drifted, and unused variables. Then read each compiled prompt in `sops/build/` yourself for contradictions the CLI can't see (e.g. one block offers delivery while the agent says pickup only).
 
 **Don't fix conflicts silently.** List them for the user.
 
 ## 7. Checkpoint 2: the result summary
 
-Run `sopc fmt sops` once more (then `sopc render sops` if it changed anything) so the files are in canonical style. Then show one screen and ask before committing:
+Run `sopc fmt` once more (then `sopc` if it changed anything) so the files are in canonical style. Then show one screen and ask before committing:
 
 ```
 Imported 30 agents into sops/
@@ -200,4 +202,4 @@ Only commit, push or open a PR after the user says so, and only as far as they s
 
 Then list the next steps:
 - Load each agent's prompt from `sops/build/<id>.prompt.md` in the agent code instead of the hard-coded string.
-- Before future edits, run `sopc plan sops --against main` to see which agents a change reaches.
+- Before future edits, run `sopc plan` (it compares with the default branch) to see which agents a change reaches.

@@ -72,7 +72,7 @@
     },
     "instructions": {
       "default": "",
-      "description": "Text only this agent gets, rendered after the top bases and before the SOPs.",
+      "description": "Text only this agent gets, placed after the top bases and before the SOPs.",
       "title": "Instructions",
       "type": "string"
     }

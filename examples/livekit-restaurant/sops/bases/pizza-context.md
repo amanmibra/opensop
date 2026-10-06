@@ -1,5 +1,5 @@
 ---
-# inherits: wherever pizza-context is used, restaurant-host renders first.
+# inherits: wherever pizza-context is used, restaurant-host comes first.
 # Agents that inherit pizza-context get both, parent first.
 inherits: [restaurant-host]
 ---

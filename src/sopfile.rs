@@ -526,8 +526,7 @@ pub fn rewrite(path: &str, text: &str, to: Kind) -> Result<(String, String), Vec
     };
     let new_path = to.path(stem(path));
     let fail = |why: String| {
-        let msg =
-            format!("can't write it as {} without changing the rendered prompt ({why}); edit it by hand", to.ext());
+        let msg = format!("can't write it as {} without changing the built prompt ({why}); edit it by hand", to.ext());
         vec![Issue::error("convert_failed", path, msg)]
     };
     let (back, _) = parse_sop_file(&new_path, &new_text).map_err(|e| fail(e[0].message.clone()))?;

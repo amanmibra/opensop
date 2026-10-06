@@ -19,12 +19,12 @@
     },
     "sops_heading": {
       "default": "## Procedures",
-      "description": "Heading rendered above the SOPs in each prompt.",
+      "description": "Heading placed above the SOPs in each prompt.",
       "title": "Sops Heading",
       "type": "string"
     },
     "sop_order": {
-      "description": "SOP ids to render first, in this order. The rest follow alphabetically.",
+      "description": "SOP ids to place first, in this order. The rest follow alphabetically.",
       "items": {
         "type": "string"
       },

@@ -32,7 +32,7 @@
       "type": "string"
     },
     "inherits": {
-      "description": "Other bases rendered before this one, wherever this one is used. Parents come first.",
+      "description": "Other bases placed before this one, wherever this one is used. Parents come first.",
       "items": {
         "type": "string"
       },
@@ -47,7 +47,7 @@
     },
     "position": {
       "default": "top",
-      "description": "\"top\" renders before the agent's instructions; \"bottom\" renders after the SOPs (e.g. a call closing).",
+      "description": "\"top\" goes before the agent's instructions; \"bottom\" goes after the SOPs (e.g. a call closing).",
       "enum": [
         "top",
         "bottom"

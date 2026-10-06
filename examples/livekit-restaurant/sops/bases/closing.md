@@ -1,5 +1,5 @@
 ---
-# position: bottom → rendered at the very end of the prompt, after the SOPs.
+# position: bottom → placed at the very end of the prompt, after the SOPs.
 agents: "*"
 position: bottom
 ---

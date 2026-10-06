@@ -8,8 +8,8 @@ version: 1
 variables:
   staff_transfer: the manager on duty
 
-# Heading rendered above the SOPs in every prompt.
+# Heading placed above the SOPs in every prompt.
 sops_heading: "## Procedures"
 
-# SOPs listed here render first, in this order. Unlisted SOPs follow alphabetically.
+# SOPs listed here come first, in this order. Unlisted SOPs follow alphabetically.
 sop_order: [allergen-check]

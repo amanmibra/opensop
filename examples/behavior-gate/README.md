@@ -19,7 +19,7 @@ Agents removed in the PR are skipped. A shared change reaches only the agents th
 
 ## What your command gets
 
-The detect job is one command, `sopc affected ... --all-if-none --ci`, and the `test` job passes its results to your command:
+The detect job is one command, `sopc affected --against origin/<base branch> --all-if-none --ci`, and the `test` job passes its results to your command:
 
 | Variable | Example |
 |---|---|
@@ -62,15 +62,16 @@ To test agents in parallel instead, uncomment the `test-each` job: it runs once 
 ## Set it up
 
 1. Copy `.github/workflows/behavior-gate.yml` into your repo.
-2. Set `SOPC_ROOT` if your sopc folder isn't `sops/`, and the `paths:` your tests live in.
+2. If your sopc folder isn't `sops/` (or the repo root), set `SOPC_ROOT` to it and change the `sops/**` path. Add the `paths:` your tests live in.
 3. Replace the placeholder in **Run your tests** with your command (it fails on purpose until you do).
 4. Make the **behavior-gate / test** check required in your branch protection rules, so failing tests block the merge.
 
 The same command works outside GitHub Actions:
 
 ```sh
-sopc affected sops --against origin/main                        # sopc ids, one per line
-sopc affected sops --against origin/main --format platform-ids  # the platforms' own ids
-sopc affected sops --against origin/main --format json          # everything, including changed SOPs
-sopc affected sops --agents "asst_9f3e la-casita"               # specific agents (either kind of id)
+sopc affected                                   # sopc ids, one per line, compared with your default branch
+sopc affected --format platform-ids             # the platforms' own ids
+sopc affected --format json                     # everything, including changed SOPs
+sopc affected --against release                 # compared with another branch or ref
+sopc affected --agents "asst_9f3e la-casita"    # specific agents (either kind of id)
 ```
