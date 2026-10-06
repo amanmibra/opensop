@@ -27,6 +27,10 @@ Not related to Mozilla's `sops` (secrets) or the OpenSOP process engine.
 
 ## Quickstart
 
+### Already have agent prompts?
+
+Most teams start here: a prompt per agent, written by hand, mostly copied from each other. The `sopc-import` skill converts them for you.
+
 **1. Add the import skill to your repo** (one line, run in the repo root):
 
 ```sh
@@ -43,7 +47,7 @@ For Codex, use `-o .agents/skills/sopc-import/SKILL.md` instead. OpenCode reads 
 | Codex | `$sopc-import` (or pick it from `/skills`) |
 | OpenCode | ask it to "use the sopc-import skill" |
 
-That's the whole setup. The skill installs the `sopc` CLI if it's missing, turns your prompts into sopc files, checks that nothing was lost, and asks you to approve a one-screen plan before it writes anything.
+That's the whole setup. The skill installs the `sopc` CLI if it's missing, finds your existing prompts (in code, files or a platform dashboard), turns them into sopc files, checks that nothing was lost, and asks you to approve a one-screen plan before it writes anything.
 
 <details>
 <summary>Claude Code plugin (shares the skill with your whole team)</summary>
@@ -72,7 +76,11 @@ Then run `/sopc:sopc-import` (plugin skills are prefixed with the plugin name). 
 
 </details>
 
-**3. Load the built prompt in your agent**
+### Starting from scratch?
+
+No existing prompts to convert? Skip the skill: install the CLI (below), copy [`examples/livekit-restaurant/sops`](examples/livekit-restaurant/sops) as a starting point, and edit it. Every file is commented, and `sopc guide` prints the full format reference. Coding agents can write sopc files from it too.
+
+### Then: load the built prompt in your agent
 
 ```ts
 const instructions = readFileSync(`sops/build/${agentId}.prompt.md`, "utf8");
