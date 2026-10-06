@@ -2,7 +2,7 @@
 
 This is the complete reference for writing sopc files, for people and for coding agents. If you are an agent asked to create or change voice-agent instructions in a sopc folder, read this whole file first, then follow the checklist at the end.
 
-A full, commented example lives in [`examples/livekit-restaurant/sops/`](examples/livekit-restaurant/sops). JSON Schemas for every file are in [`spec/`](spec).
+A full, commented example lives in [`examples/livekit-restaurant/sops/`](https://github.com/amanmibra/sopc/tree/main/examples/livekit-restaurant/sops). JSON Schemas for every file are in [`spec/`](https://github.com/amanmibra/sopc/tree/main/spec).
 
 ## The model in one paragraph
 

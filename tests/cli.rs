@@ -425,6 +425,22 @@ fn guide_prints_the_format_reference() {
 }
 
 #[test]
+fn printed_docs_link_absolutely() {
+    // `sopc guide` and installed skills are read inside other repos, where relative links are dead.
+    for file in ["FORMAT.md", "skills/sopc-import/SKILL.md"] {
+        let text = read(&repo_root().join(file));
+        for (i, _) in text.match_indices("](") {
+            let target = &text[i + 2..];
+            assert!(
+                target.starts_with("https://") || target.starts_with('#'),
+                "{file}: relative link {}",
+                target.lines().next().unwrap_or_default()
+            );
+        }
+    }
+}
+
+#[test]
 fn format_reference_lists_every_validation_code() {
     let guide = read(&repo_root().join("FORMAT.md"));
     let source = ["workspace.rs", "sopfile.rs"].map(|f| read(&repo_root().join("src").join(f))).join("\n");
