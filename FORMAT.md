@@ -303,5 +303,6 @@ Neither command changes any agent's prompt or `get_sop` payload; each checks thi
 5. Run `opensop plan <root>` (or `opensop plan <root> --against main`) and confirm that only the agents you meant to change appear.
 6. Run `opensop check <root>`. If your change introduced a duplicate or conflict, fix it; report pre-existing ones to the user.
 7. Run `opensop fmt <root>`, then `opensop render <root>` so `build/` matches.
+8. Never pass `--yes` to `opensop fmt` or `opensop convert` on your own. If one of them lists a file it won't rewrite because comments would be lost, tell the user and let them decide.
 
 To convert existing prompts into this format, follow the `opensop-import` skill (`opensop skills install`).

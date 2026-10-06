@@ -161,6 +161,8 @@ opensop render sops
 opensop compare sops --originals sops/originals
 ```
 
+If `opensop fmt` lists a file it won't rewrite because that would remove comments, don't add `--yes`: leave the file, or move the comment's content somewhere it survives, and mention it to the user. Only use `--yes` if the user approves removing exactly those comments.
+
 `compare` fails if any sentence from an original is **missing** or **changed** in the rendered prompt, and shows the changed words. Fix those; they're lost or altered instructions. **Reworded** lines (most words present, e.g. one sentence split into steps) don't fail; check each one says the same thing. **Added** lines should only be SOP headings and approved goals. Repeat until every agent passes.
 
 ## 6. Check for conflicts

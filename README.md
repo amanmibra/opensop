@@ -112,7 +112,12 @@ agents: "*"
 - Never say an item is "allergen-free" or "safe"
 ```
 
-Lock a base or SOP (`locked: true`) and no agent can drop it.
+- **Every SOP needs at least one step.** A goal is recommended (a warning, not an error).
+- **The format is checked strictly:** only `## Steps`, `## Never`, `## Warning signs`, `**Goal:**` and `**When:**` are allowed, and every mistake is reported with its file and line (`procedures/takeout.md: error [md_unknown_section] line 11: ...`).
+- **YAML SOPs still work,** and `opensop convert` switches between the two without changing any prompt.
+- **Lock a base or SOP** (`locked: true`) and no agent can drop it.
+
+`opensop fmt` keeps SOP files in one style, and it never deletes anything silently: if formatting or converting a file would remove comments, the file is left as it is and listed with those comments. Add `--yes` to allow it.
 
 Change one shared file and see what moves before you merge:
 
@@ -157,6 +162,7 @@ OpenSOP builds prompts into `sops/build/`, and the simplest setup ships them wit
 Agent instructions live in `sops/` in the opensop format.
 Run `opensop guide` and read it before editing anything there.
 Finish with `opensop fmt sops`, `opensop validate sops`, `opensop check sops` and `opensop plan sops --against main`.
+Never pass `--yes` to `opensop fmt` or `opensop convert` unless I've approved removing the comments it lists.
 ```
 
 For editor autocomplete, point `yaml-language-server` at the schemas in [`spec/`](spec).
