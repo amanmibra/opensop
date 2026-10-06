@@ -23,7 +23,7 @@ Running one agent per customer usually means dozens of near-identical prompts ma
 
 sopc, the SOP compiler, keeps the shared parts (bases, SOPs, agents) in one place, in git, and compiles them into one prompt per agent.
 
-Not related to Mozilla's `sops` (secrets) or the OpenSOP process engine.
+Not related to Mozilla's `sops` (secrets).
 
 ## Quickstart
 
