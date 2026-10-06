@@ -424,6 +424,7 @@ fn run(command: Command, dir: Option<PathBuf>) -> anyhow::Result<ExitCode> {
             let Some(against) = against.or_else(|| default_ref(&root)) else {
                 bail!("nothing to compare against; pass --against <ref>")
             };
+            eprintln!("Comparing with {}", describe_ref(&root, &against)?);
             let before = build_at(&root, &against)?.map(|b| plan::snapshot(&b)).unwrap_or_default();
             let plan = plan::make_plan(&before, &after);
             if json {
@@ -437,13 +438,21 @@ fn run(command: Command, dir: Option<PathBuf>) -> anyhow::Result<ExitCode> {
             let head = build(&root)?;
             let requested: Vec<String> =
                 agents.unwrap_or_default().replace(',', " ").split_whitespace().map(String::from).collect();
-            let mut base = None;
-            let against = if requested.is_empty() { against.or_else(|| default_ref(&root)) } else { against };
+            let (mut base, mut compared) = (None, None);
+            let against = if requested.is_empty() { against.or_else(|| default_ref(&root)) } else { None };
             if let Some(r) = &against {
+                let described = describe_ref(&root, r)?;
+                eprintln!("Comparing with {described}");
                 base = build_at(&root, r)?;
                 if base.is_none() {
                     eprintln!("no sopc files at {r}; treating every agent as new");
                 }
+                compared = Some(described);
+            } else if requested.is_empty() && !all_if_none {
+                eprintln!(
+                    "warning: no default branch found (origin/HEAD, main, master); selecting every agent. \
+                     Pass --against REF to compare."
+                );
             }
             let result = plan::affected(&head, base.as_ref(), &requested, all_if_none)?;
             match format {
@@ -452,7 +461,7 @@ fn run(command: Command, dir: Option<PathBuf>) -> anyhow::Result<ExitCode> {
                 Format::Ids => result.agents.iter().for_each(|a| println!("{}", a.id)),
             }
             if ci {
-                write_github(&result)?;
+                write_github(&result, compared.as_deref())?;
             }
         }
         Command::Agents { json } => {
@@ -644,7 +653,7 @@ fn append(path: &str, text: &str) -> anyhow::Result<()> {
 }
 
 /// Writes $GITHUB_OUTPUT and $GITHUB_STEP_SUMMARY (or shows what would be written).
-fn write_github(result: &plan::Affected) -> anyhow::Result<()> {
+fn write_github(result: &plan::Affected, compared: Option<&str>) -> anyhow::Result<()> {
     let outputs = result.github_outputs();
     match std::env::var("GITHUB_OUTPUT") {
         Ok(path) if !path.is_empty() => {
@@ -656,7 +665,7 @@ fn write_github(result: &plan::Affected) -> anyhow::Result<()> {
         }
     }
     match std::env::var("GITHUB_STEP_SUMMARY") {
-        Ok(path) if !path.is_empty() => append(&path, &result.markdown()),
+        Ok(path) if !path.is_empty() => append(&path, &result.markdown(compared)),
         _ => Ok(()),
     }
 }
@@ -738,6 +747,12 @@ fn default_ref(root: &Path) -> Option<String> {
     let head = quiet(&["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
     let candidates = head.into_iter().chain(["origin/main", "main", "origin/master", "master"].map(String::from));
     candidates.into_iter().find(|r| quiet(&["rev-parse", "--verify", "--quiet", &format!("{r}^{{commit}}")]).is_some())
+}
+
+/// A ref with its short commit id, e.g. "origin/main (3f9a2c1)".
+fn describe_ref(root: &Path, git_ref: &str) -> anyhow::Result<String> {
+    let sha = git(root, &["rev-parse", "--short", &format!("{git_ref}^{{commit}}")])?;
+    Ok(format!("{git_ref} ({})", sha.trim()))
 }
 
 /// The sopc source files under `root` as they were at a git ref.

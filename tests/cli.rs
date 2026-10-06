@@ -208,8 +208,34 @@ fn plan_with_nothing_to_compare_against() {
     let (_dir, root) = repo();
     let out = run(1, &["plan", "--dir", &root]);
     assert!(out.stderr.contains("nothing to compare against; pass --against <ref>"), "{}", out.stderr);
+    // affected selects every agent, and warns unless that was asked for.
     let out = run(0, &["affected", "--dir", &root]);
     assert_eq!(out.stdout.lines().count(), 3, "every agent: {}", out.stdout);
+    let warning = "warning: no default branch found (origin/HEAD, main, master); selecting every agent. \
+                   Pass --against REF to compare.\n";
+    assert_eq!(out.stderr, warning);
+    for flag in [&["--all-if-none"][..], &["--agents", "tonys-pizza"]] {
+        let out = run(0, &[&["affected", "--dir", &root][..], flag].concat());
+        assert_eq!(out.stderr, "", "{flag:?}");
+    }
+}
+
+#[test]
+fn plan_and_affected_say_what_they_compared_with() {
+    let (dir, _) = git_repo();
+    let sha = String::from_utf8(
+        Command::new("git").args(["rev-parse", "--short", "main"]).current_dir(dir.path()).output().unwrap().stdout,
+    )
+    .unwrap();
+    let line = format!("Comparing with main ({})\n", sha.trim());
+    for args in [&["plan"][..], &["plan", "--json"], &["affected"], &["affected", "--against", "main"]] {
+        let out = sopc_in(dir.path(), args, &[]);
+        assert_eq!((out.code, out.stderr.as_str()), (0, line.as_str()), "{args:?}");
+        assert!(!out.stdout.contains("Comparing"), "{args:?}: stdout stays clean");
+    }
+    let summary = dir.path().join("summary");
+    sopc_in(dir.path(), &["affected", "--ci"], &[("GITHUB_STEP_SUMMARY", &summary)]);
+    assert!(read(&summary).contains(&format!("Compared with `main ({})`.", sha.trim())), "{}", read(&summary));
 }
 
 #[test]
@@ -243,7 +269,7 @@ fn plan_against_a_git_ref() {
     let out = run(0, &["plan", "--dir", &root, "--against", "main", "--summary"]);
     assert!(out.stdout.contains("SOP `allergen-check` edited → 3 agents"), "{}", out.stdout);
     let out = run(1, &["plan", "--dir", &root, "--against", "nope"]);
-    assert!(out.stderr.starts_with("git ls-tree -r --name-only nope -- sops/: "), "{}", out.stderr);
+    assert!(out.stderr.starts_with("git rev-parse --short nope^{commit}: "), "{}", out.stderr);
 }
 
 #[test]

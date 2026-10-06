@@ -259,13 +259,15 @@ impl Affected {
         ]
     }
 
-    /// The GitHub step summary.
-    pub fn markdown(&self) -> String {
+    /// The GitHub step summary; `compared` is the ref compared with, e.g. "origin/main (3f9a2c1)".
+    pub fn markdown(&self, compared: Option<&str>) -> String {
+        let compared = compared.map(|c| format!("Compared with `{c}`.\n\n")).unwrap_or_default();
         if self.agents.is_empty() {
-            return "### Agents to test\n\nNone.\n".into();
+            return format!("### Agents to test\n\n{compared}None.\n");
         }
         let why = if self.all { "all agents" } else { "affected by this change" };
-        let mut lines = vec![format!("### Agents to test ({}, {why})", self.agents.len()), String::new()];
+        let heading = format!("### Agents to test ({}, {why})\n\n{compared}", self.agents.len());
+        let mut lines = vec![heading.trim_end().to_string(), String::new()];
         for a in &self.agents {
             let detail =
                 if a.changed.is_empty() { format!(" ({})", a.reason) } else { format!(": {}", a.changed.join(", ")) };
