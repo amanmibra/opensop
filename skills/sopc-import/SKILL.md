@@ -154,7 +154,7 @@ If something comes up that the plan didn't cover and that changes what an agent 
 
 ## 5. Validate, compile, compare. Repeat until clean.
 
-Run these from the repo root. They use `sops/` by default; if the folder is somewhere else, pass it to each command (`sopc path/to/sops`, `sopc validate path/to/sops`).
+Run these from the repo root. They use `sops/` by default; if the folder is somewhere else, add `--dir path/to/sops` to each command (`sopc --dir path/to/sops`, `sopc validate --dir path/to/sops`).
 
 ```
 sopc fmt

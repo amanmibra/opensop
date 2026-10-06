@@ -12,7 +12,7 @@ mod workspace;
 mod tests;
 
 use anyhow::{bail, Context};
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 use render::{render_workspace, write_build, Build};
 use sopfile::Kind;
 use std::collections::BTreeMap;
@@ -32,21 +32,21 @@ const ABOUT: &str =
     "The SOP compiler: modular, git-versioned instructions for teams managing multiple task-driven agents.
 
 Run `sopc` to compile every agent's prompt into build/ (with lock.json).
-DIR is the sopc folder (the one with sopc.yaml) for this and every command.
-It defaults to ./sops if sops/sopc.yaml exists, else ./ if sopc.yaml does.";
+Every command works on the sopc folder (the one with sopc.yaml): ./sops if
+sops/sopc.yaml exists, else ./ if sopc.yaml does. Use --dir for another one.";
 
 #[derive(Parser)]
 #[command(
     name = "sopc",
     version,
     about = ABOUT,
-    override_usage = "sopc [DIR] [-o DIR] [--check]\n       sopc <COMMAND>",
-    args_conflicts_with_subcommands = true
+    override_usage = "sopc [--dir DIR] [-o DIR] [--check]\n       sopc [--dir DIR] <COMMAND>"
 )]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
-    /// The sopc folder to compile [default: ./sops, or ./ if sopc.yaml is there]
+    /// The sopc folder, for every command [default: ./sops, or ./ if sopc.yaml is there]
+    #[arg(short = 'C', long, global = true, value_name = "DIR")]
     dir: Option<PathBuf>,
     /// Output folder [default: DIR/build]
     #[arg(short = 'o', long, value_name = "DIR")]
@@ -56,38 +56,17 @@ struct Cli {
     check: bool,
 }
 
-/// The sopc folder a command reads [default: ./sops, or ./ if sopc.yaml is there].
-#[derive(Args)]
-struct Root {
-    /// The sopc folder [default: ./sops, or ./ if sopc.yaml is there]
-    #[arg(value_name = "DIR")]
-    dir: Option<PathBuf>,
-}
-
-impl Root {
-    fn resolve(self) -> anyhow::Result<PathBuf> {
-        resolve_root(self.dir, Path::new("."))
-    }
-}
-
 #[derive(Subcommand)]
 enum Command {
     /// Check the files for errors and print every problem
-    Validate {
-        #[command(flatten)]
-        root: Root,
-    },
+    Validate,
     /// Find duplicated text and conflicting instructions in each agent's prompt
     Check {
-        #[command(flatten)]
-        root: Root,
         #[arg(long)]
         json: bool,
     },
     /// Rewrite Markdown SOP files in one canonical style (YAML ones too with --yaml)
     Fmt {
-        #[command(flatten)]
-        root: Root,
         /// List files that would change and fail if any, without writing
         #[arg(long)]
         check: bool,
@@ -100,8 +79,6 @@ enum Command {
     },
     /// Show which agents a change affects, with prompt diffs (compares with your default branch; --against REF to choose)
     Plan {
-        #[command(flatten)]
-        root: Root,
         /// Git ref to compare with [default: origin/HEAD, else main or master]
         #[arg(long, value_name = "REF")]
         against: Option<String>,
@@ -114,8 +91,6 @@ enum Command {
     },
     /// List the agents to test for a change, for CI (compares with your default branch; --against REF to choose)
     Affected {
-        #[command(flatten)]
-        root: Root,
         /// Git ref to compare with; agents whose prompt changed are selected [default: origin/HEAD,
         /// else main or master; every agent if there is none]
         #[arg(long, value_name = "REF")]
@@ -135,21 +110,16 @@ enum Command {
     },
     /// List every agent with its platform id, SOPs and tools
     Agents {
-        #[command(flatten)]
-        root: Root,
         #[arg(long)]
         json: bool,
     },
     /// Rewrite SOPs as Markdown or YAML without changing any prompt
-    #[command(override_usage = "sopc convert [DIR] --to <TO> [IDS]... [OPTIONS]")]
     Convert {
         /// The format to write
         #[arg(long, value_enum)]
         to: SopFormat,
-        /// The sopc folder (when the first value is a folder), then the SOP ids to convert
-        /// [default: ./sops, or ./ if sopc.yaml is there; every SOP not already in that format]
-        #[arg(value_name = "DIR] [IDS")]
-        args: Vec<String>,
+        /// SOP ids to convert [default: every SOP not already in that format]
+        ids: Vec<String>,
         /// Allow changes that remove comments (otherwise those files are listed and left as is)
         #[arg(short = 'y', long)]
         yes: bool,
@@ -157,12 +127,11 @@ enum Command {
     /// Show text that existing prompts share (for importing them)
     Overlap {
         /// Folder with one existing prompt per agent, named <agent-id>.md or .txt
-        dir: PathBuf,
+        #[arg(value_name = "PROMPTS")]
+        prompts: PathBuf,
     },
     /// Check the compiled prompts still say everything the original prompts did
     Compare {
-        #[command(flatten)]
-        root: Root,
         /// Folder with <agent-id>.md or .txt originals
         #[arg(long)]
         originals: PathBuf,
@@ -174,8 +143,8 @@ enum Command {
         #[arg(long, value_enum)]
         agent: Vec<CodingAgent>,
         /// Install into this folder instead
-        #[arg(long)]
-        dir: Option<PathBuf>,
+        #[arg(long, value_name = "FOLDER")]
+        into: Option<PathBuf>,
     },
     /// Print the format reference (FORMAT.md)
     Guide,
@@ -187,7 +156,7 @@ enum Command {
 fn resolve_root(dir: Option<PathBuf>, cwd: &Path) -> anyhow::Result<PathBuf> {
     if let Some(dir) = dir {
         if !cwd.join(&dir).is_dir() {
-            let msg = format!("{} is not a folder (commands are listed by `sopc --help`)", dir.display());
+            let msg = format!("{} is not a folder", dir.display());
             return Err(Issues(vec![Issue::error("missing_config", "", msg)]).into());
         }
         return Ok(dir);
@@ -201,7 +170,7 @@ fn resolve_root(dir: Option<PathBuf>, cwd: &Path) -> anyhow::Result<PathBuf> {
             }
         }
     }
-    let msg = format!("no {CONFIG} in ./sops or ./ (pass the folder, e.g. `sopc path/to/sops`)");
+    let msg = format!("no {CONFIG} in ./sops or ./ (pass the folder, e.g. `sopc --dir path/to/sops`)");
     Err(Issues(vec![Issue::error("missing_config", "", msg)]).into())
 }
 
@@ -253,8 +222,17 @@ impl std::error::Error for GitError {}
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    if cli.command.is_some() && (cli.out.is_some() || cli.check) {
+        use clap::CommandFactory;
+        Cli::command()
+            .error(
+                clap::error::ErrorKind::ArgumentConflict,
+                "-o/--out and --check apply to compiling (`sopc`), not to a command; put command options after it",
+            )
+            .exit();
+    }
     let result = match cli.command {
-        Some(command) => run(command),
+        Some(command) => run(command, cli.dir),
         None => compile(cli.dir, cli.out, cli.check),
     };
     match result {
@@ -285,7 +263,7 @@ fn build_at(root: &Path, git_ref: &str) -> anyhow::Result<Option<Build>> {
     Ok(Some(render_workspace(&load_files(&files)?)?))
 }
 
-/// `sopc [DIR]`: compiles every agent's prompt into DIR/build (or `out`), or with `check`,
+/// `sopc`: compiles every agent's prompt into DIR/build (or `out`), or with `check`,
 /// fails if that folder is out of date.
 fn compile(dir: Option<PathBuf>, out: Option<PathBuf>, check: bool) -> anyhow::Result<ExitCode> {
     let root = resolve_root(dir, Path::new("."))?;
@@ -309,10 +287,11 @@ fn compile(dir: Option<PathBuf>, out: Option<PathBuf>, check: bool) -> anyhow::R
     Ok(ExitCode::SUCCESS)
 }
 
-fn run(command: Command) -> anyhow::Result<ExitCode> {
+fn run(command: Command, dir: Option<PathBuf>) -> anyhow::Result<ExitCode> {
+    let root = || resolve_root(dir.clone(), Path::new("."));
     match command {
-        Command::Validate { root } => {
-            let root = root.resolve()?;
+        Command::Validate => {
+            let root = root()?;
             let issues = workspace::validate(&load(&root)?);
             for issue in &issues {
                 eprintln!("{issue}");
@@ -321,8 +300,8 @@ fn run(command: Command) -> anyhow::Result<ExitCode> {
             println!("{errors} error(s), {} warning(s)", issues.len() - errors);
             return Ok(if errors > 0 { ExitCode::FAILURE } else { ExitCode::SUCCESS });
         }
-        Command::Plan { root, against, summary, json } => {
-            let root = root.resolve()?;
+        Command::Plan { against, summary, json } => {
+            let root = root()?;
             let after = plan::snapshot(&build(&root)?);
             let Some(against) = against.or_else(|| default_ref(&root)) else {
                 bail!("nothing to compare against; pass --against <ref>")
@@ -335,8 +314,8 @@ fn run(command: Command) -> anyhow::Result<ExitCode> {
                 print!("{}", plan.text(!summary));
             }
         }
-        Command::Affected { root, against, agents, all_if_none, format, ci } => {
-            let root = root.resolve()?;
+        Command::Affected { against, agents, all_if_none, format, ci } => {
+            let root = root()?;
             let head = build(&root)?;
             let requested: Vec<String> =
                 agents.unwrap_or_default().replace(',', " ").split_whitespace().map(String::from).collect();
@@ -358,8 +337,8 @@ fn run(command: Command) -> anyhow::Result<ExitCode> {
                 write_github(&result)?;
             }
         }
-        Command::Agents { root, json } => {
-            let root = root.resolve()?;
+        Command::Agents { json } => {
+            let root = root()?;
             let build = build(&root)?;
             let mut list = vec![];
             for (id, r) in &build.agents {
@@ -379,9 +358,9 @@ fn run(command: Command) -> anyhow::Result<ExitCode> {
                 println!("{}", pretty_json(&serde_json::Value::Array(list), true));
             }
         }
-        Command::Overlap { dir } => print!("{}", analyze::overlap(&read_prompts(&dir)?, 0.75).text()),
-        Command::Compare { root, originals } => {
-            let root = root.resolve()?;
+        Command::Overlap { prompts } => print!("{}", analyze::overlap(&read_prompts(&prompts)?, 0.75).text()),
+        Command::Compare { originals } => {
+            let root = root()?;
             let build = build(&root)?;
             let results = analyze::compare(&build, &read_prompts(&originals)?, 0.9);
             print!("{}", analyze::compare_text(&results, &build));
@@ -389,8 +368,8 @@ fn run(command: Command) -> anyhow::Result<ExitCode> {
                 return Ok(ExitCode::FAILURE);
             }
         }
-        Command::Check { root, json } => {
-            let root = root.resolve()?;
+        Command::Check { json } => {
+            let root = root()?;
             let findings = analyze::check(&load(&root)?);
             if json {
                 let list = findings.iter().map(|f| f.to_json()).collect();
@@ -399,21 +378,16 @@ fn run(command: Command) -> anyhow::Result<ExitCode> {
                 print!("{}", analyze::check_text(&findings));
             }
         }
-        Command::Fmt { root, check, yaml, yes } => return fmt(&root.resolve()?, check, yaml, yes),
-        Command::Convert { to, mut args, yes } => {
-            // The first value is the folder when it is one; the rest are SOP ids.
-            let dir = match args.first() {
-                Some(first) if Path::new(first).is_dir() => Some(PathBuf::from(args.remove(0))),
-                _ => None,
-            };
-            let (root, ids) = (resolve_root(dir, Path::new("."))?, args);
+        Command::Fmt { check, yaml, yes } => return fmt(&root()?, check, yaml, yes),
+        Command::Convert { to, ids, yes } => {
+            let root = root()?;
             let to = match to {
                 SopFormat::Md => Kind::Markdown,
                 SopFormat::Yaml => Kind::Yaml,
             };
             return convert(&root, to, &ids, yes);
         }
-        Command::Skills { action: SkillsAction::Install, agent, dir } => install_skills(&agent, dir)?,
+        Command::Skills { action: SkillsAction::Install, agent, into } => install_skills(&agent, into)?,
         Command::Guide => print!("{FORMAT_MD}"),
     }
     Ok(ExitCode::SUCCESS)

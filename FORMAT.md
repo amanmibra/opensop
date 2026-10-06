@@ -23,7 +23,7 @@ Each voice agent's prompt is assembled from three kinds of blocks. **Bases** are
 - **Ids are file names** without the extension: `bases/brand-voice.md` has id `brand-voice`. Use lowercase kebab-case.
 - An id must be unique across bases and SOPs. An SOP is either `<id>.md` or `<id>.yaml`, not both.
 - Files outside these folders are ignored.
-- Every command works on `./sops` if `sops/sopc.yaml` exists, else on the current folder if `sopc.yaml` is there. Pass the folder to use another one: `sopc path/to/sops`, `sopc validate path/to/sops`.
+- Every command works on `./sops` if `sops/sopc.yaml` exists, else on the current folder if `sopc.yaml` is there. Use `--dir` (or `-C`) for another folder, on any command: `sopc --dir path/to/sops`, `sopc validate --dir path/to/sops`.
 
 ## How a prompt is assembled
 

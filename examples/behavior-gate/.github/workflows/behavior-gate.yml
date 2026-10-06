@@ -56,7 +56,7 @@ jobs:
           # changed and --all-if-none tests every agent (unless agents were given).
           AGAINST: ${{ github.base_ref && format('origin/{0}', github.base_ref) || 'HEAD' }}
           REQUESTED: ${{ inputs.agents }}
-        run: sopc affected ${SOPC_ROOT:+"$SOPC_ROOT"} --against "$AGAINST" --agents "$REQUESTED" --all-if-none --ci
+        run: sopc affected ${SOPC_ROOT:+--dir "$SOPC_ROOT"} --against "$AGAINST" --agents "$REQUESTED" --all-if-none --ci
 
   test:
     needs: detect

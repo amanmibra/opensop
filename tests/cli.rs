@@ -87,10 +87,10 @@ fn git_repo() -> (tempfile::TempDir, String) {
 #[test]
 fn compile_check_and_plan() {
     let (dir, root) = git_repo();
-    run(0, &[&root]);
-    run(0, &[&root, "--check"]);
+    run(0, &["--dir", &root]);
+    run(0, &["--dir", &root, "--check"]);
     edit(&Path::new(&root).join("bases/closing.md"), "repeat the order total", "repeat the order and total");
-    let out = run(1, &[&root, "--check"]);
+    let out = run(1, &["--dir", &root, "--check"]);
     assert!(out.stderr.contains("is out of date; run `sopc`"), "{}", out.stderr);
     // No --against: compares with main, the only branch.
     let out = sopc_in(dir.path(), &["plan", "--summary"], &[]);
@@ -100,7 +100,7 @@ fn compile_check_and_plan() {
 #[test]
 fn compile_prints_a_tidy_output_path() {
     let (dir, _) = repo();
-    let out = sopc_in(dir.path(), &["./sops/"], &[]);
+    let out = sopc_in(dir.path(), &["--dir", "./sops/"], &[]);
     assert_eq!(out.stdout, "wrote 6 files to sops/build\n");
 }
 
@@ -119,10 +119,10 @@ fn bare_sopc_compiles_the_default_folder() {
         assert_eq!(sopc_in(dir.path(), cmd, &[]).code, 0, "{cmd:?}");
     }
     // An explicit folder wins over the default one.
-    let out = sopc_in(dir.path(), &["sops", "-o", "elsewhere"], &[]);
+    let out = sopc_in(dir.path(), &["--dir", "sops", "-o", "elsewhere"], &[]);
     assert_eq!(out.stdout, "wrote 6 files to elsewhere\n");
     let sops = dir.path().join("sops");
-    assert_eq!(sopc_in(&sops, &["."], &[]).stdout, "wrote 6 files to build\n");
+    assert_eq!(sopc_in(&sops, &["--dir", "."], &[]).stdout, "wrote 6 files to build\n");
 }
 
 #[test]
@@ -143,7 +143,7 @@ fn default_folder_is_sops_then_the_current_one() {
         assert_eq!(out.code, 1, "{args:?}");
         assert!(
             out.stderr.contains(
-                "error [missing_config] no sopc.yaml in ./sops or ./ (pass the folder, e.g. `sopc path/to/sops`)"
+                "error [missing_config] no sopc.yaml in ./sops or ./ (pass the folder, e.g. `sopc --dir path/to/sops`)"
             ),
             "{args:?}: {}",
             out.stderr
@@ -158,22 +158,30 @@ fn default_folder_is_sops_then_the_current_one() {
 }
 
 #[test]
-fn a_command_name_is_never_read_as_a_folder() {
+fn the_folder_is_a_flag_on_every_command() {
     let (dir, _) = repo();
-    std::fs::create_dir(dir.path().join("check")).unwrap();
-    let out = sopc_in(dir.path(), &["check"], &[]);
-    assert_eq!(out.code, 0, "{}", out.stderr);
-    assert!(!dir.path().join("check/build").exists());
-    let out = sopc_in(dir.path(), &["nope"], &[]);
+    // --dir / -C goes before or after the command.
+    for args in [&["--dir", "sops", "validate"][..], &["validate", "--dir", "sops"], &["-C", "sops", "check"]] {
+        assert_eq!(sopc_in(dir.path(), args, &[]).code, 0, "{args:?}");
+    }
+    // Typos are unknown commands with a suggestion, never folders.
+    let out = sopc_in(dir.path(), &["valdate"], &[]);
+    assert_eq!(out.code, 2);
+    assert!(out.stderr.contains("a similar subcommand exists: 'validate'"), "{}", out.stderr);
+    let out = sopc_in(dir.path(), &["--dir", "nope"], &[]);
     assert!(out.stderr.contains("nope is not a folder"), "{}", out.stderr);
+    // Compile-only flags can't be combined with a command.
+    let out = sopc_in(dir.path(), &["--check", "validate"], &[]);
+    assert_eq!(out.code, 2);
+    assert!(out.stderr.contains("apply to compiling"), "{}", out.stderr);
 }
 
 #[test]
 fn plan_with_nothing_to_compare_against() {
     let (_dir, root) = repo();
-    let out = run(1, &["plan", &root]);
+    let out = run(1, &["plan", "--dir", &root]);
     assert!(out.stderr.contains("nothing to compare against; pass --against <ref>"), "{}", out.stderr);
-    let out = run(0, &["affected", &root]);
+    let out = run(0, &["affected", "--dir", &root]);
     assert_eq!(out.stdout.lines().count(), 3, "every agent: {}", out.stdout);
 }
 
@@ -205,9 +213,9 @@ fn plan_against_a_git_ref() {
         "Name the specific allergen",
         "Repeat the specific allergen",
     );
-    let out = run(0, &["plan", &root, "--against", "main", "--summary"]);
+    let out = run(0, &["plan", "--dir", &root, "--against", "main", "--summary"]);
     assert!(out.stdout.contains("SOP `allergen-check` edited → 3 agents"), "{}", out.stdout);
-    let out = run(1, &["plan", &root, "--against", "nope"]);
+    let out = run(1, &["plan", "--dir", &root, "--against", "nope"]);
     assert!(out.stderr.starts_with("git ls-tree -r --name-only nope -- sops/: "), "{}", out.stderr);
 }
 
@@ -218,10 +226,10 @@ fn plan_against_a_ref_from_before_the_rename() {
     git(dir.path(), &["init", "-q", "-b", "main"]);
     git(dir.path(), &["add", "."]);
     git(dir.path(), &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
-    let out = run(1, &["validate", &root]);
+    let out = run(1, &["validate", "--dir", &root]);
     assert!(out.stderr.contains("rename opensop.yaml to sopc.yaml"), "{}", out.stderr);
     git(dir.path(), &["mv", "sops/opensop.yaml", "sops/sopc.yaml"]);
-    let out = run(0, &["plan", &root, "--against", "main", "--summary"]);
+    let out = run(0, &["plan", "--dir", &root, "--against", "main", "--summary"]);
     assert!(out.stdout.contains("No agent prompts change."), "{}", out.stdout);
 }
 
@@ -229,7 +237,7 @@ fn plan_against_a_ref_from_before_the_rename() {
 fn validate_reports_errors() {
     let (_dir, root) = repo();
     edit(&Path::new(&root).join("agents/tonys-pizza.yaml"), "inherits: [pizza-context]", "inherits: [nope]");
-    let out = run(1, &["validate", &root]);
+    let out = run(1, &["validate", "--dir", &root]);
     assert!(out.stderr.contains("agents/tonys-pizza.yaml: error [unknown_base]"), "{}", out.stderr);
     assert_eq!(out.stdout, "1 error(s), 0 warning(s)\n");
 }
@@ -237,15 +245,15 @@ fn validate_reports_errors() {
 #[test]
 fn example_is_valid_and_its_build_is_current() {
     let ex = example().to_string_lossy().into_owned();
-    let out = run(0, &["validate", &ex]);
+    let out = run(0, &["validate", "--dir", &ex]);
     assert_eq!((out.stdout.as_str(), out.stderr.as_str()), ("0 error(s), 0 warning(s)\n", ""));
-    run(0, &[&ex, "--check"]);
-    run(0, &["check", &ex]);
-    run(0, &["fmt", &ex, "--check"]);
+    run(0, &["--dir", &ex, "--check"]);
+    run(0, &["check", "--dir", &ex]);
+    run(0, &["fmt", "--dir", &ex, "--check"]);
 }
 
 fn built(root: &str, out: &Path) -> std::collections::BTreeMap<String, String> {
-    run(0, &[root, "--out", &out.to_string_lossy()]);
+    run(0, &["--dir", root, "--out", &out.to_string_lossy()]);
     let files = std::fs::read_dir(out).unwrap().map(|e| e.unwrap().path());
     files
         .filter(|p| !p.ends_with("lock.json"))
@@ -273,19 +281,19 @@ fn convert_round_trip_keeps_every_prompt_and_tool_json() {
             .into_iter()
             .map(|n| (n.clone(), read(&Path::new(&root).join("procedures").join(&n))))
             .collect();
-        let out = run(0, &["convert", &root, "--to", "md"]);
+        let out = run(0, &["convert", "--dir", &root, "--to", "md"]);
         assert!(out.stdout.contains(".yaml -> procedures/"), "{}", out.stdout);
         assert!(sop_files(&root).iter().all(|n| n.ends_with(".md")));
         assert_eq!(built(&root, &dir.path().join("b1")), before);
-        run(0, &["fmt", &root, "--check"]);
+        run(0, &["fmt", "--dir", &root, "--check"]);
         if src == example() {
             // The example's front matter has trailing comments that YAML output can't keep:
             // converting back refuses until approved, and lists them.
-            let out = run(1, &["convert", &root, "--to", "yaml"]);
+            let out = run(1, &["convert", "--dir", &root, "--to", "yaml"]);
             assert!(out.stderr.contains("not converted: it would remove"), "{}", out.stderr);
-            run(0, &["convert", &root, "--to", "yaml", "--yes"]);
+            run(0, &["convert", "--dir", &root, "--to", "yaml", "--yes"]);
         } else {
-            run(0, &["convert", &root, "--to", "yaml"]);
+            run(0, &["convert", "--dir", &root, "--to", "yaml"]);
         }
         assert_eq!(built(&root, &dir.path().join("b2")), before);
         if src == fixture().join("sops") {
@@ -301,36 +309,36 @@ fn convert_round_trip_keeps_every_prompt_and_tool_json() {
 #[test]
 fn convert_some_sops_and_unknown_ids() {
     let (_dir, root) = repo();
-    let out = run(0, &["convert", &root, "--to", "md", "reservations"]);
+    let out = run(0, &["convert", "--dir", &root, "--to", "md", "reservations"]);
     assert_eq!(out.stdout, "converted procedures/reservations.yaml -> procedures/reservations.md\n");
     assert!(sop_files(&root).contains(&"allergen-check.yaml".to_string()));
-    let out = run(1, &["convert", &root, "--to", "md", "nope"]);
+    let out = run(1, &["convert", "--dir", &root, "--to", "md", "nope"]);
     assert!(out.stderr.contains("error [unknown_sop] 'nope' is not an SOP"), "{}", out.stderr);
-    let out = run(0, &["convert", &root, "--to", "md", "reservations"]);
+    let out = run(0, &["convert", "--dir", &root, "--to", "md", "reservations"]);
     assert_eq!(out.stdout, "nothing to convert\n");
 }
 
 #[test]
 fn fmt_check_exit_codes() {
     let (_dir, root) = repo();
-    let out = run(0, &["fmt", &root, "--check"]);
+    let out = run(0, &["fmt", "--dir", &root, "--check"]);
     assert!(out.stdout.contains("4 YAML SOP file(s) not checked; add --yaml"), "{}", out.stdout);
-    let out = run(0, &["fmt", &root, "--check", "--yaml"]);
+    let out = run(0, &["fmt", "--dir", &root, "--check", "--yaml"]);
     assert_eq!(out.stdout, "0 SOP file(s) would be reformatted, 4 already formatted\n");
     let file = Path::new(&root).join("procedures/reservations.yaml");
     edit(&file, "name: Reservations\n", "\nname:   Reservations\ndelivery: prompt\n");
     let messy = read(&file);
-    run(0, &["fmt", &root]); // YAML isn't touched without --yaml
+    run(0, &["fmt", "--dir", &root]); // YAML isn't touched without --yaml
     assert_eq!(read(&file), messy);
-    let out = run(1, &["fmt", &root, "--check", "--yaml"]);
+    let out = run(1, &["fmt", "--dir", &root, "--check", "--yaml"]);
     assert_eq!(out.stdout, "would reformat procedures/reservations.yaml\n");
     assert_eq!(read(&file), messy, "--check writes nothing");
-    let out = run(0, &["fmt", &root, "--yaml"]);
+    let out = run(0, &["fmt", "--dir", &root, "--yaml"]);
     assert!(out.stdout.starts_with("formatted procedures/reservations.yaml\n"), "{}", out.stdout);
     assert!(read(&file).starts_with("name: Reservations\nagents:"));
-    run(0, &["fmt", &root, "--check", "--yaml"]);
+    run(0, &["fmt", "--dir", &root, "--check", "--yaml"]);
     std::fs::write(Path::new(&root).join("procedures/broken.md"), "# Broken\n## Notes\n").unwrap();
-    let out = run(1, &["fmt", &root]);
+    let out = run(1, &["fmt", "--dir", &root]);
     assert!(out.stderr.contains("procedures/broken.md: error [md_unknown_section] line 2:"), "{}", out.stderr);
 }
 
@@ -356,14 +364,14 @@ fn format_reference_lists_every_validation_code() {
 #[test]
 fn plan_json_and_agents_json() {
     let (_dir, root) = git_repo();
-    run(0, &[&root]);
+    run(0, &["--dir", &root]);
     edit(
         &Path::new(&root).join("procedures/reservations.yaml"),
         "Never double-book a table",
         "Never double-book or overbook a table",
     );
     let plan: serde_json::Value =
-        serde_json::from_str(&run(0, &["plan", &root, "--against", "main", "--json"]).stdout).unwrap();
+        serde_json::from_str(&run(0, &["plan", "--dir", &root, "--against", "main", "--json"]).stdout).unwrap();
     let got: Vec<String> = plan["changes"]
         .as_array()
         .unwrap()
@@ -377,7 +385,8 @@ fn plan_json_and_agents_json() {
             r#""sakura-sushi" "livekit:sakura-sushi" "changed""#
         ]
     );
-    let agents: serde_json::Value = serde_json::from_str(&run(0, &["agents", &root, "--json"]).stdout).unwrap();
+    let agents: serde_json::Value =
+        serde_json::from_str(&run(0, &["agents", "--dir", &root, "--json"]).stdout).unwrap();
     let sakura = agents.as_array().unwrap().iter().find(|a| a["id"] == "sakura-sushi").unwrap();
     assert_eq!(sakura["platform_id"], "sakura-sushi");
     assert_eq!(sakura["sops"], serde_json::json!(["allergen-check", "reservations"]));
@@ -396,7 +405,7 @@ fn affected_against_a_git_ref_writes_github_outputs() {
     let (output, summary) = (dir.path().join("out"), dir.path().join("summary"));
     let out = sopc_in(
         dir.path(),
-        &["affected", &root, "--against", "main", "--all-if-none", "--ci"],
+        &["affected", "--dir", &root, "--against", "main", "--all-if-none", "--ci"],
         &[("GITHUB_OUTPUT", &output), ("GITHUB_STEP_SUMMARY", &summary)],
     );
     assert_eq!(out.code, 0, "{}", out.stderr);
@@ -416,7 +425,7 @@ fn affected_against_a_git_ref_writes_github_outputs() {
 #[test]
 fn affected_without_github_output_shows_what_it_would_write() {
     let (_dir, root) = repo();
-    let out = run(0, &["affected", &root, "--agents", "tonys-pizza", "--ci"]);
+    let out = run(0, &["affected", "--dir", &root, "--agents", "tonys-pizza", "--ci"]);
     assert!(
         out.stderr.contains("# GITHUB_OUTPUT not set; these would be written:\n#   ids=tonys-pizza\n"),
         "{}",
@@ -427,13 +436,14 @@ fn affected_without_github_output_shows_what_it_would_write() {
 #[test]
 fn affected_json_format_and_unknown_agents() {
     let (_dir, root) = repo();
-    let data: serde_json::Value =
-        serde_json::from_str(&run(0, &["affected", &root, "--agents", "tonys-pizza", "--format", "json"]).stdout)
-            .unwrap();
+    let data: serde_json::Value = serde_json::from_str(
+        &run(0, &["affected", "--dir", &root, "--agents", "tonys-pizza", "--format", "json"]).stdout,
+    )
+    .unwrap();
     assert_eq!(data["count"], 1);
     assert_eq!(data["agents"][0]["reason"], "requested");
     assert_eq!(data["agents"][0]["sops"], serde_json::json!(["allergen-check", "delivery-handling", "large-orders"]));
-    let out = run(1, &["affected", &root, "--agents", "nope,tonys-pizza"]);
+    let out = run(1, &["affected", "--dir", &root, "--agents", "nope,tonys-pizza"]);
     assert!(out.stderr.starts_with("error [unknown_agent] unknown agent(s): nope. Known: "), "{}", out.stderr);
 }
 
@@ -441,9 +451,12 @@ fn affected_json_format_and_unknown_agents() {
 fn compare_exit_code() {
     let sops = fixture().join("sops");
     let originals = fixture().join("originals");
-    let out = run(1, &["compare", sops.to_str().unwrap(), "--originals", originals.to_str().unwrap()]);
+    let out = run(1, &["compare", "--dir", sops.to_str().unwrap(), "--originals", originals.to_str().unwrap()]);
     assert!(out.stdout.contains("('twice' → 'once')"), "{}", out.stdout);
-    let out = run(1, &["compare", sops.to_str().unwrap(), "--originals", repo_root().join("spec").to_str().unwrap()]);
+    let out = run(
+        1,
+        &["compare", "--dir", sops.to_str().unwrap(), "--originals", repo_root().join("spec").to_str().unwrap()],
+    );
     assert!(out.stderr.contains("error [no_prompts]"), "{}", out.stderr);
 }
 
@@ -452,7 +465,7 @@ fn overlap_and_check_run() {
     let out = run(0, &["overlap", fixture().join("originals").to_str().unwrap()]);
     assert!(out.stdout.starts_with("3 prompts: luigis-trattoria, sakura-sushi, tonys-pizza\n"));
     assert!(out.stdout.contains("Near-copies"));
-    let out = run(0, &["check", fixture().join("sops").to_str().unwrap(), "--json"]);
+    let out = run(0, &["check", "--dir", fixture().join("sops").to_str().unwrap(), "--json"]);
     assert_eq!(out.stdout, "[]\n");
 }
 
@@ -479,7 +492,7 @@ fn skills_install_for_one_agent_or_folder() {
     assert_eq!(sopc_in(dir.path(), &["skills", "install", "--agent", "codex"], &[]).code, 0);
     assert!(dir.path().join(".agents/skills/sopc-import/SKILL.md").exists());
     assert!(!dir.path().join(".claude").exists());
-    let out = sopc_in(dir.path(), &["skills", "install", "--dir", "custom"], &[]);
+    let out = sopc_in(dir.path(), &["skills", "install", "--into", "custom"], &[]);
     assert_eq!(out.stdout, "installed custom/sopc-import/SKILL.md\n\n");
 }
 
@@ -487,7 +500,7 @@ fn skills_install_for_one_agent_or_folder() {
 fn argument_errors_exit_2() {
     for args in [
         &["--foo"][..],
-        &["sops", "validate"],
+        &["sops"],
         &["validate", "--jso"],
         &["affected", "--format", "xx"],
         &["compare"],
@@ -498,10 +511,15 @@ fn argument_errors_exit_2() {
         assert!(out.stderr.contains("error:"), "{args:?}: {}", out.stderr);
     }
     let out = run(0, &["--help"]);
-    assert!(out.stdout.contains("Usage: sopc [DIR] [-o DIR] [--check]\n       sopc <COMMAND>"), "{}", out.stdout);
+    assert!(
+        out.stdout.contains("Usage: sopc [--dir DIR] [-o DIR] [--check]\n       sopc [--dir DIR] <COMMAND>"),
+        "{}",
+        out.stdout
+    );
     assert!(out.stdout.contains("Run `sopc` to compile"), "{}", out.stdout);
     let out = run(0, &["plan", "-h"]);
-    assert!(out.stdout.contains("Usage: sopc plan [OPTIONS] [DIR]"), "{}", out.stdout);
+    assert!(out.stdout.contains("Usage: sopc plan [OPTIONS]"), "{}", out.stdout);
+    assert!(out.stdout.contains("-C, --dir <DIR>"), "{}", out.stdout);
 }
 
 #[test]
@@ -512,7 +530,7 @@ fn rewrites_that_would_remove_comments_need_yes() {
     edit(&file, "procedureSteps:\n", "procedureSteps:\n  # ask first\n");
     let original = read(&file);
 
-    let out = run(1, &["fmt", &root, "--yaml"]);
+    let out = run(1, &["fmt", "--dir", &root, "--yaml"]);
     assert!(
         out.stderr.contains("procedures/reservations.yaml: not formatted: it would remove 2 comment(s)"),
         "{}",
@@ -520,13 +538,13 @@ fn rewrites_that_would_remove_comments_need_yes() {
     );
     assert!(out.stderr.contains("# the heading") && out.stderr.contains("# ask first"), "{}", out.stderr);
     assert_eq!(read(&file), original, "nothing is written without --yes");
-    run(1, &["fmt", &root, "--yaml", "--check"]);
+    run(1, &["fmt", "--dir", &root, "--yaml", "--check"]);
 
-    let out = run(1, &["convert", &root, "--to", "md", "reservations"]);
+    let out = run(1, &["convert", "--dir", &root, "--to", "md", "reservations"]);
     assert!(out.stderr.contains("not converted: it would remove 2 comment(s)"), "{}", out.stderr);
     assert_eq!(read(&file), original);
 
-    run(0, &["fmt", &root, "--yaml", "-y"]);
+    run(0, &["fmt", "--dir", &root, "--yaml", "-y"]);
     assert!(!read(&file).contains("# ask first"));
-    run(0, &["fmt", &root, "--yaml", "--check"]);
+    run(0, &["fmt", "--dir", &root, "--yaml", "--check"]);
 }

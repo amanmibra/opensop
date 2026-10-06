@@ -74,8 +74,8 @@ def sopc(*args: str) -> str:
 
 def build(root: Path, out: Path) -> dict[str, Built]:
     """Compile every agent's prompt in a sopc root into `out`."""
-    sopc(str(root), "--out", str(out))
-    agents = json.loads(sopc("agents", str(root), "--json"))
+    sopc("--dir", str(root), "--out", str(out))
+    agents = json.loads(sopc("agents", "--dir", str(root), "--json"))
     return {
         a["id"]: Built((out / f"{a['id']}.prompt.md").read_text(), a["tools"], a["sops"], a["hash"])
         for a in agents
@@ -216,8 +216,8 @@ def main() -> int:
     root = Path(args.sops)
     head = build(root, tmp / "head-build")
     base = build_at(args.base, root, tmp)
-    plan_text = sopc("plan", str(root), "--against", args.base, "--summary")
-    affected = json.loads(sopc("affected", str(root), "--against", args.base, "--format", "json"))
+    plan_text = sopc("plan", "--dir", str(root), "--against", args.base, "--summary")
+    affected = json.loads(sopc("affected", "--dir", str(root), "--against", args.base, "--format", "json"))
 
     cases = [Case(**c) for c in yaml.safe_load(Path(args.cases).read_text())]
     changed = [a["id"] for a in affected["agents"]]  # prompt changed or new; removed agents aren't listed
