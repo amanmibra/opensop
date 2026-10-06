@@ -248,7 +248,7 @@ Set exactly one platform field. Elsewhere in sopc, refer to the agent by its id 
 **Nothing destructive happens without `-y` / `--yes`.** Some rewrites can't keep every comment: a YAML file's comments below the top block, or trailing comments on front-matter settings when converting to YAML. Both commands leave such a file as it is, list it with the exact comments it would lose, and exit 1. Edit it by hand, or rerun with `--yes` to remove those comments:
 
 ```
-procedures/takeout.yaml: not formatted: it would remove 2 comment(s); edit it by hand, or rerun with --yes to remove them
+sops/procedures/takeout.yaml: not formatted: it would remove 2 comment(s); edit it by hand, or rerun with --yes to remove them
   line 2: # the heading agents see
   line 6: # ask first
 ```
@@ -257,7 +257,7 @@ Neither command changes any agent's prompt or `get_sop` payload; each checks thi
 
 ## Validation
 
-`sopc validate` reports these; every error names the file, and Markdown errors give the line number (`procedures/x.md: error [md_unknown_section] line 14: ...`). `sopc fmt` and `sopc convert` also report `convert_failed` (see above).
+`sopc validate` reports these; every error names the file, as a path from the current folder, and Markdown errors give the line number (`sops/procedures/x.md: error [md_unknown_section] line 14: ...`). `sopc fmt` and `sopc convert` also report `convert_failed` (see above).
 
 | Code | Severity | Meaning |
 |---|---|---|

@@ -269,7 +269,18 @@ fn plan_against_a_git_ref() {
     let out = run(0, &["plan", "--dir", &root, "--against", "main", "--summary"]);
     assert!(out.stdout.contains("SOP `allergen-check` edited → 3 agents"), "{}", out.stdout);
     let out = run(1, &["plan", "--dir", &root, "--against", "nope"]);
-    assert!(out.stderr.starts_with("git rev-parse --short nope^{commit}: "), "{}", out.stderr);
+    let want = "error: unknown git ref `nope`; check the name, or fetch it (`git fetch origin nope`)\n";
+    assert_eq!(out.stderr, want);
+    let out = run(1, &["affected", "--dir", &root, "--against", "origin/nope"]);
+    assert!(out
+        .stderr
+        .contains("unknown git ref `origin/nope`; check the name, or fetch it (`git fetch origin nope`)"));
+    // Outside a git repo.
+    let (_dir, root) = repo();
+    for cmd in ["plan", "affected"] {
+        let out = run(1, &[cmd, "--dir", &root, "--against", "main"]);
+        assert_eq!(out.stderr, "error: not a git repository; --against needs git\n", "{cmd}");
+    }
 }
 
 #[test]
@@ -288,11 +299,20 @@ fn plan_against_a_ref_from_before_the_rename() {
 
 #[test]
 fn validate_reports_errors() {
-    let (_dir, root) = repo();
+    let (dir, root) = repo();
     edit(&Path::new(&root).join("agents/tonys-pizza.yaml"), "inherits: [pizza-context]", "inherits: [nope]");
     let out = run(1, &["validate", "--dir", &root]);
     assert!(out.stderr.contains("agents/tonys-pizza.yaml: error [unknown_base]"), "{}", out.stderr);
     assert_eq!(out.stdout, "1 error(s), 0 warning(s)\n");
+    // Paths are printed from the current folder, for validate and the commands that load files.
+    for args in [&["validate"][..], &["agents"], &[]] {
+        let out = sopc_in(dir.path(), args, &[]);
+        assert!(
+            out.stderr.starts_with("sops/agents/tonys-pizza.yaml: error [unknown_base]"),
+            "{args:?}: {}",
+            out.stderr
+        );
+    }
 }
 
 #[test]
@@ -335,7 +355,7 @@ fn convert_round_trip_keeps_every_prompt_and_tool_json() {
             .map(|n| (n.clone(), read(&Path::new(&root).join("procedures").join(&n))))
             .collect();
         let out = run(0, &["convert", "--dir", &root, "--to", "md"]);
-        assert!(out.stdout.contains(".yaml -> procedures/"), "{}", out.stdout);
+        assert!(out.stdout.contains(".yaml -> "), "{}", out.stdout);
         assert!(sop_files(&root).iter().all(|n| n.ends_with(".md")));
         assert_eq!(built(&root, &dir.path().join("b1")), before);
         run(0, &["fmt", "--dir", &root, "--check"]);
@@ -361,9 +381,10 @@ fn convert_round_trip_keeps_every_prompt_and_tool_json() {
 
 #[test]
 fn convert_some_sops_and_unknown_ids() {
-    let (_dir, root) = repo();
-    let out = run(0, &["convert", "--dir", &root, "--to", "md", "reservations"]);
-    assert_eq!(out.stdout, "converted procedures/reservations.yaml -> procedures/reservations.md\n");
+    let (dir, root) = repo();
+    // Paths are printed from the current folder.
+    let out = sopc_in(dir.path(), &["convert", "--to", "md", "reservations"], &[]);
+    assert_eq!(out.stdout, "converted sops/procedures/reservations.yaml -> sops/procedures/reservations.md\n");
     assert!(sop_files(&root).contains(&"allergen-check.yaml".to_string()));
     let names = std::fs::read_dir(Path::new(&root).join("procedures")).unwrap();
     assert!(names.map(|e| e.unwrap().file_name()).all(|n| !n.to_string_lossy().starts_with('.')), "no temp files");
@@ -375,7 +396,7 @@ fn convert_some_sops_and_unknown_ids() {
 
 #[test]
 fn fmt_check_exit_codes() {
-    let (_dir, root) = repo();
+    let (dir, root) = repo();
     let out = run(0, &["fmt", "--dir", &root, "--check"]);
     assert!(out.stdout.contains("4 YAML SOP file(s) not checked; add --yaml"), "{}", out.stdout);
     let out = run(0, &["fmt", "--dir", &root, "--check", "--yaml"]);
@@ -385,16 +406,16 @@ fn fmt_check_exit_codes() {
     let messy = read(&file);
     run(0, &["fmt", "--dir", &root]); // YAML isn't touched without --yaml
     assert_eq!(read(&file), messy);
-    let out = run(1, &["fmt", "--dir", &root, "--check", "--yaml"]);
-    assert_eq!(out.stdout, "would reformat procedures/reservations.yaml\n");
+    let out = sopc_in(dir.path(), &["fmt", "--check", "--yaml"], &[]);
+    assert_eq!((out.code, out.stdout.as_str()), (1, "would reformat sops/procedures/reservations.yaml\n"));
     assert_eq!(read(&file), messy, "--check writes nothing");
-    let out = run(0, &["fmt", "--dir", &root, "--yaml"]);
-    assert!(out.stdout.starts_with("formatted procedures/reservations.yaml\n"), "{}", out.stdout);
+    let out = sopc_in(&Path::new(&root).join("procedures"), &["fmt", "-C", "..", "--yaml"], &[]);
+    assert!(out.stdout.starts_with("formatted ../procedures/reservations.yaml\n"), "{}", out.stdout);
     assert!(read(&file).starts_with("name: Reservations\nagents:"));
     run(0, &["fmt", "--dir", &root, "--check", "--yaml"]);
     std::fs::write(Path::new(&root).join("procedures/broken.md"), "# Broken\n## Notes\n").unwrap();
-    let out = run(1, &["fmt", "--dir", &root]);
-    assert!(out.stderr.contains("procedures/broken.md: error [md_unknown_section] line 2:"), "{}", out.stderr);
+    let out = sopc_in(dir.path(), &["fmt"], &[]);
+    assert!(out.stderr.starts_with("sops/procedures/broken.md: error [md_unknown_section] line 2:"), "{}", out.stderr);
 }
 
 #[test]

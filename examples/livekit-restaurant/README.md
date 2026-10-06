@@ -111,7 +111,7 @@ La Casita wants every call in Spanish, but `brand-voice` is English and locked. 
 exclude: [brand-voice]
 ```
 ```
-agents/la-casita.yaml: error [locked] can't exclude 'brand-voice': it is locked
+sops/agents/la-casita.yaml: error [locked] can't exclude 'brand-voice': it is locked
 ```
 
 Instead, the exception is written into the locked block itself, and a Spanish version targets only La Casita:
@@ -175,7 +175,7 @@ Say the team wants every agent to use the caller's name.
 If someone tries to remove the locked brand voice from an agent, `sopc validate` fails:
 
 ```
-agents/sakura-sushi.yaml: error [locked] can't exclude 'brand-voice': it is locked
+sops/agents/sakura-sushi.yaml: error [locked] can't exclude 'brand-voice': it is locked
 ```
 
 ## Run it

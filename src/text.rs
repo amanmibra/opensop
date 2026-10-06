@@ -64,3 +64,12 @@ pub fn tidy(path: &Path) -> PathBuf {
         tidy
     }
 }
+
+/// A path under `root` (given relative to it) as seen from the current folder, so terminals and
+/// editors can open it: `procedures/x.md` in `sops` → `sops/procedures/x.md`.
+pub fn user_path(root: &Path, rel: &str) -> String {
+    let path = tidy(&root.join(rel));
+    let cwd = std::env::current_dir().ok();
+    let path = cwd.and_then(|cwd| path.strip_prefix(cwd).ok().map(Path::to_path_buf)).unwrap_or(path);
+    path.to_string_lossy().into_owned()
+}

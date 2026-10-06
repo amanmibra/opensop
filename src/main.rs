@@ -30,7 +30,7 @@ use std::fmt;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use text::{pretty_json, tidy};
+use text::{pretty_json, tidy, user_path};
 use workspace::{
     is_source, load, load_files, read_files, read_text, stem, write_atomic, Issue, Issues, CONFIG, LEGACY_CONFIG,
 };
@@ -315,7 +315,7 @@ impl CodingAgent {
     }
 }
 
-/// A failed git command; printed as is.
+/// A failed git command; printed after "error: ".
 #[derive(Debug)]
 struct GitError(String);
 
@@ -338,6 +338,7 @@ fn main() -> ExitCode {
             )
             .exit();
     }
+    let dir = cli.dir.clone();
     let result = match cli.command {
         Some(command) => run(command, cli.dir),
         None => compile(cli.dir, cli.out, cli.check, cli.force),
@@ -346,9 +347,11 @@ fn main() -> ExitCode {
         Ok(code) => code,
         Err(err) => {
             if let Some(issues) = err.downcast_ref::<Issues>() {
-                eprintln!("{issues}");
+                // Issue paths are relative to the sopc folder; print them from the current one.
+                let root = resolve_root(dir, Path::new(".")).unwrap_or_default();
+                eprintln!("{}", Issues(issues.0.iter().map(|i| i.seen_from_cwd(&root)).collect()));
             } else if let Some(git) = err.downcast_ref::<GitError>() {
-                eprintln!("{git}");
+                eprintln!("error: {git}");
             } else {
                 eprintln!("sopc: error: {err:#}");
             }
@@ -388,7 +391,7 @@ fn compile(dir: Option<PathBuf>, out: Option<PathBuf>, check: bool, force: bool)
     let out = tidy(&out.unwrap_or_else(|| root.join("build")));
     let build = build(&root)?;
     for w in &build.warnings {
-        eprintln!("{w}");
+        eprintln!("{}", w.seen_from_cwd(&root));
     }
     if check {
         let plan = plan::make_plan(&plan::read_snapshot(&out)?, &plan::snapshot(&build));
@@ -412,7 +415,7 @@ fn run(command: Command, dir: Option<PathBuf>) -> anyhow::Result<ExitCode> {
             let root = root()?;
             let issues = workspace::validate(&load(&root)?);
             for issue in &issues {
-                eprintln!("{issue}");
+                eprintln!("{}", issue.seen_from_cwd(&root));
             }
             let errors = issues.iter().filter(|i| !i.warning).count();
             println!("{errors} error(s), {} warning(s)", issues.len() - errors);
@@ -536,10 +539,11 @@ fn lost_comment_lines(path: &str, text: &str, new: &str) -> Vec<String> {
 
 /// Files left as they are because rewriting them would remove comments (destructive changes
 /// need --yes). They're reported like check failures, with the comments that would go.
-fn report_held(held: &[(String, Vec<String>)], action: &str) {
+fn report_held(root: &Path, held: &[(String, Vec<String>)], action: &str) {
     for (path, lost) in held {
         eprintln!(
-            "{path}: not {action}: it would remove {} comment(s); edit it by hand, or rerun with --yes to remove them",
+            "{}: not {action}: it would remove {} comment(s); edit it by hand, or rerun with --yes to remove them",
+            user_path(root, path),
             lost.len()
         );
         for line in lost {
@@ -574,13 +578,13 @@ fn fmt(root: &Path, check: bool, yaml: bool, yes: bool) -> anyhow::Result<ExitCo
     }
     for (path, new) in &changed {
         if check {
-            println!("would reformat {path}");
+            println!("would reformat {}", user_path(root, path));
         } else {
             write_atomic(&root.join(path), new)?;
-            println!("formatted {path}");
+            println!("formatted {}", user_path(root, path));
         }
     }
-    report_held(&held, "formatted");
+    report_held(root, &held, "formatted");
     if skipped > 0 {
         println!("{skipped} YAML SOP file(s) not checked; add --yaml to format them too");
     }
@@ -634,9 +638,9 @@ fn convert(root: &Path, to: Kind, ids: &[String], yes: bool) -> anyhow::Result<E
     for (old, new_path, new) in &out {
         write_atomic(&root.join(new_path), new)?;
         std::fs::remove_file(root.join(old))?;
-        println!("converted {old} -> {new_path}");
+        println!("converted {} -> {}", user_path(root, old), user_path(root, new_path));
     }
-    report_held(&held, "converted");
+    report_held(root, &held, "converted");
     if out.is_empty() && held.is_empty() {
         println!("nothing to convert");
     }
@@ -728,7 +732,7 @@ fn install_skills(agents: &[CodingAgent], dir: Option<PathBuf>) -> anyhow::Resul
 
 fn git(cwd: &Path, args: &[&str]) -> anyhow::Result<String> {
     let output = std::process::Command::new("git").args(args).current_dir(cwd).output();
-    let output = output.map_err(|e| GitError(format!("git {}: {e}", args.join(" "))))?;
+    let output = output.map_err(|e| GitError(format!("can't run git ({e}); --against needs git")))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(GitError(format!("git {}: {}", args.join(" "), stderr.trim())).into());
@@ -749,10 +753,21 @@ fn default_ref(root: &Path) -> Option<String> {
     candidates.into_iter().find(|r| quiet(&["rev-parse", "--verify", "--quiet", &format!("{r}^{{commit}}")]).is_some())
 }
 
-/// A ref with its short commit id, e.g. "origin/main (3f9a2c1)".
+/// A ref with its short commit id, e.g. "origin/main (3f9a2c1)". Fails in plain words when
+/// this isn't a git repo or the ref doesn't exist.
 fn describe_ref(root: &Path, git_ref: &str) -> anyhow::Result<String> {
-    let sha = git(root, &["rev-parse", "--short", &format!("{git_ref}^{{commit}}")])?;
-    Ok(format!("{git_ref} ({})", sha.trim()))
+    match git(root, &["rev-parse", "--short", &format!("{git_ref}^{{commit}}")]) {
+        Ok(sha) => Ok(format!("{git_ref} ({})", sha.trim())),
+        Err(e) if e.to_string().contains("not a git repository") => {
+            Err(GitError("not a git repository; --against needs git".into()).into())
+        }
+        Err(e) if e.to_string().starts_with("can't run git") => Err(e),
+        Err(_) => {
+            let branch = git_ref.strip_prefix("origin/").unwrap_or(git_ref);
+            let msg = format!("unknown git ref `{git_ref}`; check the name, or fetch it (`git fetch origin {branch}`)");
+            Err(GitError(msg).into())
+        }
+    }
 }
 
 /// The sopc source files under `root` as they were at a git ref.
