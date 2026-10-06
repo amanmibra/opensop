@@ -524,6 +524,24 @@ fn argument_errors_exit_2() {
 }
 
 #[test]
+fn help_has_examples_and_docs_links() {
+    let docs = "https://github.com/amanmibra/sopc/blob/main/CLI.md";
+    let out = run(0, &["--help"]);
+    assert!(out.stdout.contains("Examples:\n  sopc "), "{}", out.stdout);
+    assert!(out.stdout.ends_with(&format!("Docs: {docs}\nIssues: https://github.com/amanmibra/sopc/issues\n")));
+    assert!(!run(0, &["-h"]).stdout.contains("Examples:"));
+    for cmd in
+        ["validate", "lint", "fmt", "plan", "affected", "agents", "convert", "overlap", "compare", "skills", "guide"]
+    {
+        let link = format!("Docs: {docs}#sopc-{cmd}\n");
+        let long = run(0, &[cmd, "--help"]).stdout;
+        assert!(long.contains(&format!("Examples:\n  sopc {cmd}")) && long.ends_with(&link), "{cmd}: {long}");
+        let short = run(0, &[cmd, "-h"]).stdout;
+        assert!(!short.contains("Examples:") && short.ends_with(&link), "{cmd}: {short}");
+    }
+}
+
+#[test]
 fn rewrites_that_would_remove_comments_need_yes() {
     let (_dir, root) = repo();
     let file = Path::new(&root).join("procedures/reservations.yaml");

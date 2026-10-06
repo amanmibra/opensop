@@ -35,12 +35,41 @@ Run `sopc` to compile every agent's prompt into build/ (with lock.json).
 Every command works on the sopc folder (the one with sopc.yaml): ./sops if
 sops/sopc.yaml exists, else ./ if sopc.yaml does. Use --dir for another one.";
 
+const LINKS: &str = "Docs: https://github.com/amanmibra/sopc/blob/main/CLI.md
+Issues: https://github.com/amanmibra/sopc/issues";
+
+const EXAMPLES: &str = "Examples:
+  sopc                         Compile ./sops into sops/build
+  sopc --check                 Exit 1 if sops/build is out of date (for CI)
+  sopc validate                Find errors in the files
+  sopc plan                    Show which agents a change affects, with prompt diffs
+  sopc -C path/to/sops -o out  Compile another folder into out/
+
+Docs: https://github.com/amanmibra/sopc/blob/main/CLI.md
+Issues: https://github.com/amanmibra/sopc/issues";
+
+/// A command's docs link, shown by `-h`.
+macro_rules! docs {
+    ($cmd:literal) => {
+        concat!("Docs: https://github.com/amanmibra/sopc/blob/main/CLI.md#sopc-", $cmd)
+    };
+}
+
+/// A command's examples and docs link, shown by `--help`.
+macro_rules! examples {
+    ($cmd:literal, $examples:literal) => {
+        concat!("Examples:\n", $examples, "\n\n", docs!($cmd))
+    };
+}
+
 #[derive(Parser)]
 #[command(
     name = "sopc",
     version,
     about = ABOUT,
-    override_usage = "sopc [--dir DIR] [-o DIR] [--check]\n       sopc [--dir DIR] <COMMAND>"
+    override_usage = "sopc [--dir DIR] [-o DIR] [--check]\n       sopc [--dir DIR] <COMMAND>",
+    after_help = LINKS,
+    after_long_help = EXAMPLES
 )]
 struct Cli {
     #[command(subcommand)]
@@ -59,13 +88,30 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Find errors in the files and print every problem
+    #[command(
+        after_help = docs!("validate"),
+        after_long_help = examples!("validate", "  sopc validate                  Find errors in ./sops
+  sopc validate -C path/to/sops  Find errors in another folder")
+    )]
     Validate,
     /// Find duplicated text and conflicting instructions in each agent's prompt
+    #[command(
+        after_help = docs!("lint"),
+        after_long_help = examples!("lint", "  sopc lint         List duplicates and conflicts to review
+  sopc lint --json  The same findings as JSON")
+    )]
     Lint {
+        /// Machine-readable output
         #[arg(long)]
         json: bool,
     },
     /// Rewrite Markdown SOP files in one canonical style (YAML ones too with --yaml)
+    #[command(
+        after_help = docs!("fmt"),
+        after_long_help = examples!("fmt", "  sopc fmt          Rewrite Markdown SOPs in the canonical style
+  sopc fmt --check  List files that would change; exit 1 if any (for CI)
+  sopc fmt --yaml   Format YAML SOPs too")
+    )]
     Fmt {
         /// List files that would change and fail if any, without writing
         #[arg(long)]
@@ -78,6 +124,13 @@ enum Command {
         yes: bool,
     },
     /// Show which agents a change affects, with prompt diffs (compares with your default branch; --against REF to choose)
+    #[command(
+        after_help = docs!("plan"),
+        after_long_help = examples!("plan", "  sopc plan                Compare with the default branch, with prompt diffs
+  sopc plan --summary      Only which agents change, and because of which block
+  sopc plan --against v1   Compare with a tag, branch or commit
+  sopc plan --json         Machine-readable output (for CI)")
+    )]
     Plan {
         /// Git ref to compare with [default: origin/HEAD, else main or master]
         #[arg(long, value_name = "REF")]
@@ -90,6 +143,13 @@ enum Command {
         json: bool,
     },
     /// List the agents to test for a change, for CI (compares with your default branch; --against REF to choose)
+    #[command(
+        after_help = docs!("affected"),
+        after_long_help = examples!("affected", "  sopc affected                        Ids of agents whose prompt changed
+  sopc affected --format platform-ids  The platforms' own ids instead
+  sopc affected --ci --all-if-none     In GitHub Actions: write outputs; every agent if none changed
+  sopc affected --agents tonys-pizza   Select agents by hand")
+    )]
     Affected {
         /// Git ref to compare with; agents whose prompt changed are selected [default: origin/HEAD,
         /// else main or master; every agent if there is none]
@@ -109,11 +169,22 @@ enum Command {
         ci: bool,
     },
     /// List every agent with its platform id, SOPs and tools
+    #[command(
+        after_help = docs!("agents"),
+        after_long_help = examples!("agents", "  sopc agents         One line per agent: id, platform, platform id, SOPs
+  sopc agents --json  Everything, with bases, tools and prompt hashes")
+    )]
     Agents {
+        /// Machine-readable output
         #[arg(long)]
         json: bool,
     },
     /// Rewrite SOPs as Markdown or YAML without changing any prompt
+    #[command(
+        after_help = docs!("convert"),
+        after_long_help = examples!("convert", "  sopc convert --to md                 Every YAML SOP to Markdown
+  sopc convert --to yaml reservations  One SOP to YAML")
+    )]
     Convert {
         /// The format to write
         #[arg(long, value_enum)]
@@ -125,19 +196,34 @@ enum Command {
         yes: bool,
     },
     /// Show text that existing prompts share (for importing them)
+    #[command(
+        after_help = docs!("overlap"),
+        after_long_help = examples!("overlap", "  sopc overlap prompts/  Shared and near-copied text across prompts/*.md")
+    )]
     Overlap {
         /// Folder with one existing prompt per agent, named <agent-id>.md or .txt
         #[arg(value_name = "PROMPTS")]
         prompts: PathBuf,
     },
     /// Check the compiled prompts still say everything the original prompts did
+    #[command(
+        after_help = docs!("compare"),
+        after_long_help = examples!("compare", "  sopc compare --originals prompts/  Exit 1 if a compiled prompt lost or changed a sentence")
+    )]
     Compare {
         /// Folder with <agent-id>.md or .txt originals
         #[arg(long)]
         originals: PathBuf,
     },
     /// Install the sopc skills for coding agents
+    #[command(
+        after_help = docs!("skills"),
+        after_long_help = examples!("skills", "  sopc skills install                 For Claude Code, Codex and OpenCode
+  sopc skills install --agent claude  For Claude Code only
+  sopc skills install --into DIR      Into another folder")
+    )]
     Skills {
+        /// What to do
         action: SkillsAction,
         /// Install for this coding agent only (repeatable) [default: Claude Code, Codex and OpenCode]
         #[arg(long, value_enum)]
@@ -147,6 +233,11 @@ enum Command {
         into: Option<PathBuf>,
     },
     /// Print the format reference (FORMAT.md)
+    #[command(
+        after_help = docs!("guide"),
+        after_long_help = examples!("guide", "  sopc guide         Print the format reference
+  sopc guide | less  Page through it")
+    )]
     Guide,
 }
 
