@@ -6,7 +6,7 @@
     "build": "tsc",
     "dev": "tsc && node dist/main.js dev",
     "start": "node dist/main.js start",
-    "sops": "opensop render sops && opensop validate sops"
+    "sops": "sopc render sops && sopc validate sops"
   },
   "dependencies": {
     "@livekit/agents": "^1.0.0",

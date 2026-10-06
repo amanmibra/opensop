@@ -1,15 +1,15 @@
 [package]
-name = "opensop"
+name = "sopc"
 version = "0.0.6"
 edition = "2021"
 rust-version = "1.80"
-description = "Modular, git-versioned instructions for teams managing multiple task-driven agents"
+description = "The SOP compiler: modular, git-versioned instructions for teams managing multiple task-driven agents"
 license = "Apache-2.0"
-repository = "https://github.com/amanmibra/opensop"
+repository = "https://github.com/amanmibra/sopc"
 include = ["src/**", "FORMAT.md", "skills/**", "README.md", "LICENSE"]
 
 [[bin]]
-name = "opensop"
+name = "sopc"
 path = "src/main.rs"
 
 [dependencies]

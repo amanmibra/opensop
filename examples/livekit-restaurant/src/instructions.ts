@@ -1,6 +1,6 @@
-// Loads this agent's instructions from the prompts opensop built into sops/build/.
+// Loads this agent's instructions from the prompts sopc built into sops/build/.
 //
-// opensop renders one full prompt per agent (`opensop render sops`). The files are
+// sopc renders one full prompt per agent (`sopc render sops`). The files are
 // committed and copied into the Docker image, so the agent reads them from disk:
 // no network call, nothing that can be down. A prompt change ships with the next
 // `lk agent deploy`.
@@ -15,7 +15,7 @@ interface Lock {
 }
 
 export interface Instructions {
-  /** The opensop agent id, e.g. "tonys-pizza". */
+  /** The sopc agent id, e.g. "tonys-pizza". */
   id: string;
   /** The full prompt to pass to voice.Agent. */
   text: string;
@@ -28,7 +28,7 @@ export function loadInstructions(agentName: string): Instructions {
   const lock: Lock = JSON.parse(readFileSync(join(BUILD_DIR, 'lock.json'), 'utf8'));
   const entry = Object.entries(lock.agents).find(([, a]) => a.platform_ref === `livekit:${agentName}`);
   if (!entry) {
-    throw new Error(`No opensop agent with "livekit: ${agentName}". Add sops/agents/<id>.yaml and run \`opensop render sops\`.`);
+    throw new Error(`No sopc agent with "livekit: ${agentName}". Add sops/agents/<id>.yaml and run \`sopc render sops\`.`);
   }
   const [id, { hash }] = entry;
   return { id, hash, text: readFileSync(join(BUILD_DIR, `${id}.prompt.md`), 'utf8') };

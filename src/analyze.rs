@@ -14,10 +14,10 @@ use std::sync::LazyLock;
 static LIST_MARKER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(?:[-*+]|\d+[.)])\s+").unwrap());
 static HEADING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*#{1,6}\s+").unwrap());
 static LABEL_ONLY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z ]{0,30}:$").unwrap());
-static OPENSOP_PREFIX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(?:Goal|When this applies):\s+").unwrap());
+static SOPC_PREFIX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(?:Goal|When this applies):\s+").unwrap());
 static WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[a-z0-9]+(?:'[a-z]+)?").unwrap());
 static NUMBER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[0-9]+(?:[.:][0-9]+)?").unwrap());
-/// Lines opensop itself adds to SOPs, which originals never contain.
+/// Lines sopc itself adds to SOPs, which originals never contain.
 static GENERATED: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(?:Use the `[^`]+` tool\.|This applies to the `[^`]+` tool\.|Before following this procedure, call the `get_sop` tool.*)$").unwrap()
 });
@@ -67,7 +67,7 @@ pub fn units(text: &str) -> Vec<String> {
             continue;
         }
         let line = LIST_MARKER.replace(line, "");
-        let line = OPENSOP_PREFIX.replace(&line, "");
+        let line = SOPC_PREFIX.replace(&line, "");
         out.extend(split_sentences(&line).into_iter().map(str::trim).filter(|s| !s.is_empty()).map(String::from));
     }
     out.retain(|u| words(u).len() >= MIN_WORDS);

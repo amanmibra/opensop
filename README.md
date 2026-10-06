@@ -1,10 +1,12 @@
 <div align="center">
 
-# 📋🧩 OpenSOP
+# 📋🧩 sopc
 
-**Modular, git-versioned instructions for teams managing multiple task-driven agents.**
+**The SOP compiler: modular, git-versioned instructions for teams managing multiple task-driven agents.**
 
-Write shared instructions and SOPs once. OpenSOP builds each agent's full prompt<br>
+*dbt for agent instructions.*
+
+Write shared instructions and SOPs once. sopc compiles each agent's full prompt<br>
 and shows exactly which agents a change touches.
 
 [Quickstart](#quickstart) · [How it works](#how-it-works) · [Commands](#commands) · [Format](FORMAT.md) · [Example](examples/livekit-restaurant)
@@ -19,37 +21,39 @@ An SOP is a standard operating procedure: what an agent should do in a given sit
 
 Running one agent per customer usually means dozens of near-identical prompts maintained by hand. A tone tweak means editing all of them. A new rule means remembering which ones need it. Copies drift.
 
-OpenSOP keeps the shared parts in one place, in git, and builds every agent's prompt from them.
+sopc, the SOP compiler, keeps the shared parts (bases, SOPs, agents) in one place, in git, and compiles them into one prompt per agent.
+
+Not related to Mozilla's `sops` (secrets) or the OpenSOP process engine.
 
 ## Quickstart
 
 **1. Add the import skill to your repo** (one line, run in the repo root):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/skills/opensop-import/SKILL.md --create-dirs -o .claude/skills/opensop-import/SKILL.md
+curl -fsSL https://raw.githubusercontent.com/amanmibra/sopc/main/skills/sopc-import/SKILL.md --create-dirs -o .claude/skills/sopc-import/SKILL.md
 ```
 
-For Codex, use `-o .agents/skills/opensop-import/SKILL.md` instead. OpenCode reads either.
+For Codex, use `-o .agents/skills/sopc-import/SKILL.md` instead. OpenCode reads either.
 
 **2. Run it in your coding agent:**
 
 | Agent | Run |
 |---|---|
-| Claude Code | `/opensop-import` |
-| Codex | `$opensop-import` (or pick it from `/skills`) |
-| OpenCode | ask it to "use the opensop-import skill" |
+| Claude Code | `/sopc-import` |
+| Codex | `$sopc-import` (or pick it from `/skills`) |
+| OpenCode | ask it to "use the sopc-import skill" |
 
-That's the whole setup. The skill installs the `opensop` CLI if it's missing, turns your prompts into OpenSOP files, checks that nothing was lost, and asks you to approve a one-screen plan before it writes anything.
+That's the whole setup. The skill installs the `sopc` CLI if it's missing, turns your prompts into sopc files, checks that nothing was lost, and asks you to approve a one-screen plan before it writes anything.
 
 <details>
 <summary>Claude Code plugin (shares the skill with your whole team)</summary>
 
 ```
-/plugin marketplace add amanmibra/opensop
-/plugin install opensop@opensop
+/plugin marketplace add amanmibra/sopc
+/plugin install sopc@sopc
 ```
 
-Then run `/opensop:opensop-import` (plugin skills are prefixed with the plugin name). To set it up for everyone who opens the repo, add the marketplace to your project's `.claude/settings.json` under `extraKnownMarketplaces` and enable `opensop@opensop` in `enabledPlugins`; see [Claude Code's plugin docs](https://code.claude.com/docs/en/plugins/marketplace-reference).
+Then run `/sopc:sopc-import` (plugin skills are prefixed with the plugin name). To set it up for everyone who opens the repo, add the marketplace to your project's `.claude/settings.json` under `extraKnownMarketplaces` and enable `sopc@sopc` in `enabledPlugins`; see [Claude Code's plugin docs](https://code.claude.com/docs/en/plugins/marketplace-reference).
 
 </details>
 
@@ -59,11 +63,11 @@ Then run `/opensop:opensop-import` (plugin skills are prefixed with the plugin n
 | Step | Who | What happens |
 |---|---|---|
 | Collect | agent | Copies each existing prompt into `sops/originals/`, asks for anything it can't find |
-| Map | `opensop overlap` | Finds text every prompt shares, text some share, and near-copies that differ by a value (or have drifted) |
+| Map | `sopc overlap` | Finds text every prompt shares, text some share, and near-copies that differ by a value (or have drifted) |
 | Plan | you | Approve a one-screen plan: which bases and SOPs, which to lock, how to handle drift |
 | Build | agent | Writes the files, keeping the original wording |
-| Verify | `opensop compare` | Fails if any original sentence is missing or changed; the agent repeats until it passes |
-| Review | `opensop check` | Flags duplicates and conflicts (10pm vs 11pm, "always X" vs "never X") for you to decide |
+| Verify | `sopc compare` | Fails if any original sentence is missing or changed; the agent repeats until it passes |
+| Review | `sopc check` | Flags duplicates and conflicts (10pm vs 11pm, "always X" vs "never X") for you to decide |
 | Commit | you | Approve a one-screen summary before anything is committed |
 
 </details>
@@ -77,10 +81,10 @@ const instructions = readFileSync(`sops/build/${agentId}.prompt.md`, "utf8");
 **Installing the CLI yourself** (for CI, or to run the commands below):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/amanmibra/sopc/main/install.sh | sh
 ```
 
-Installs a single `opensop` binary into `~/.local/bin` (macOS, Linux, Windows; amd64 and arm64). Pin a version with `OPENSOP_REF=v0.0.6`, or pick the folder with `OPENSOP_INSTALL_DIR`. From source, with Rust: `cargo install --git https://github.com/amanmibra/opensop`. `opensop skills install` writes the import skill for Claude Code, Codex and OpenCode at once.
+Installs a single `sopc` binary into `~/.local/bin` (macOS, Linux, Windows; amd64 and arm64). Pin a version with `SOPC_REF=v0.0.6`, or pick the folder with `SOPC_INSTALL_DIR`. From source, with Rust: `cargo install --git https://github.com/amanmibra/sopc`. `sopc skills install` writes the import skill for Claude Code, Codex and OpenCode at once.
 
 See the [LiveKit example](examples/livekit-restaurant) for a complete agent, the [Braintrust example](examples/braintrust-evals) for blocking SOP changes that make agents worse, and the [behavior gate](examples/behavior-gate) for running your own tests on just the agents a PR changes.
 
@@ -114,15 +118,15 @@ agents: "*"
 
 - **Every SOP needs at least one step.** A goal is recommended (a warning, not an error).
 - **The format is checked strictly:** only `## Steps`, `## Never`, `## Warning signs`, `**Goal:**` and `**When:**` are allowed, and every mistake is reported with its file and line (`procedures/takeout.md: error [md_unknown_section] line 11: ...`).
-- **YAML SOPs still work,** and `opensop convert` switches between the two without changing any prompt.
+- **YAML SOPs still work,** and `sopc convert` switches between the two without changing any prompt.
 - **Lock a base or SOP** (`locked: true`) and no agent can drop it.
 
-`opensop fmt` keeps SOP files in one style, and it never deletes anything silently: if formatting or converting a file would remove comments, the file is left as it is and listed with those comments. Add `--yes` to allow it.
+`sopc fmt` keeps SOP files in one style, and it never deletes anything silently: if formatting or converting a file would remove comments, the file is left as it is and listed with those comments. Add `--yes` to allow it.
 
 Change one shared file and see what moves before you merge:
 
 ```console
-$ opensop plan sops --against main
+$ sopc plan sops --against main
 3 agents change:
   base `brand-voice` edited → 3 agents: luigis-trattoria, sakura-sushi, tonys-pizza
   SOP `reservations` edited → 2 agents: luigis-trattoria, sakura-sushi
@@ -137,39 +141,39 @@ $ opensop plan sops --against main
 
 | Command | What it does |
 |---|---|
-| `opensop validate sops` | Check the files |
-| `opensop render sops` | Build one full prompt per agent into `sops/build/` |
-| `opensop plan sops --against main` | Which agents a change touches, and why, with diffs (`--json` for CI) |
-| `opensop agents sops` | List agents with their platform ids, SOPs and tools (`--json` for CI) |
-| `opensop affected sops --against main` | Which agents to test for a change, with the SOPs that changed (`--ci` for GitHub Actions) |
-| `opensop check sops` | Duplicated text and conflicting instructions |
-| `opensop fmt sops` | Rewrite Markdown SOPs in canonical style (`--yaml` for YAML too, `--check` for CI) |
-| `opensop convert sops --to md` | Rewrite YAML SOPs as Markdown (or `--to yaml`), without changing any prompt; changes that would drop comments need `--yes` |
-| `opensop overlap <dir>` | What a set of existing prompts have in common |
-| `opensop compare sops --originals <dir>` | Confirm built prompts still say everything the originals did |
-| `opensop skills install` | Install the import skill for Claude Code, Codex and OpenCode |
-| `opensop guide` | Print the format reference |
+| `sopc validate sops` | Check the files |
+| `sopc render sops` | Build one full prompt per agent into `sops/build/` |
+| `sopc plan sops --against main` | Which agents a change touches, and why, with diffs (`--json` for CI) |
+| `sopc agents sops` | List agents with their platform ids, SOPs and tools (`--json` for CI) |
+| `sopc affected sops --against main` | Which agents to test for a change, with the SOPs that changed (`--ci` for GitHub Actions) |
+| `sopc check sops` | Duplicated text and conflicting instructions |
+| `sopc fmt sops` | Rewrite Markdown SOPs in canonical style (`--yaml` for YAML too, `--check` for CI) |
+| `sopc convert sops --to md` | Rewrite YAML SOPs as Markdown (or `--to yaml`), without changing any prompt; changes that would drop comments need `--yes` |
+| `sopc overlap <dir>` | What a set of existing prompts have in common |
+| `sopc compare sops --originals <dir>` | Confirm built prompts still say everything the originals did |
+| `sopc skills install` | Install the import skill for Claude Code, Codex and OpenCode |
+| `sopc guide` | Print the format reference |
 
 ## Serving prompts
 
-OpenSOP builds prompts into `sops/build/`, and the simplest setup ships them with your agent's code. To have agents fetch their prompt when a call starts instead (so a merge goes live without a redeploy), use **sopserve**, the companion server, which is in its own repo and still early.
+sopc builds prompts into `sops/build/`, and the simplest setup ships them with your agent's code. To have agents fetch their prompt when a call starts instead (so a merge goes live without a redeploy), use **sopserve**, the companion server, which is in its own repo and still early.
 
 ## Working with coding agents
 
 [FORMAT.md](FORMAT.md) is the full reference, written for people and agents. Add this to your project's `AGENTS.md` (Codex, OpenCode) or `CLAUDE.md` (Claude Code):
 
 ```markdown
-Agent instructions live in `sops/` in the opensop format.
-Run `opensop guide` and read it before editing anything there.
-Finish with `opensop fmt sops`, `opensop validate sops`, `opensop check sops` and `opensop plan sops --against main`.
-Never pass `--yes` to `opensop fmt` or `opensop convert` unless I've approved removing the comments it lists.
+Agent instructions live in `sops/` in the sopc format.
+Run `sopc guide` and read it before editing anything there.
+Finish with `sopc fmt sops`, `sopc validate sops`, `sopc check sops` and `sopc plan sops --against main`.
+Never pass `--yes` to `sopc fmt` or `sopc convert` unless I've approved removing the comments it lists.
 ```
 
 For editor autocomplete, point `yaml-language-server` at the schemas in [`spec/`](spec).
 
 ## Status
 
-Early. OpenSOP is deliberately just the format and the tools to build and check it; serving prompts and evaluating calls are left to other tools. See the [roadmap](ROADMAP.md).
+Early. sopc is deliberately just the format and the tools to build and check it; serving prompts and evaluating calls are left to other tools. See the [roadmap](ROADMAP.md).
 
 ## Contributing
 

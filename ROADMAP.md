@@ -1,6 +1,6 @@
 # Roadmap
 
-OpenSOP is the format for writing, versioning and building agent instructions, plus the tools to check them. It stays small on purpose. Serving prompts, evaluating calls and editing UIs belong in other tools that read the format.
+sopc is the format for writing, versioning and building agent instructions, plus the tools to check them. It stays small on purpose. Serving prompts, evaluating calls and editing UIs belong in other tools that read the format.
 
 ## Done
 
@@ -8,7 +8,7 @@ OpenSOP is the format for writing, versioning and building agent instructions, p
 - **Build and validate.** One full prompt per agent, `lock.json` with block hashes and referenced tools, clear errors (including YAML colon traps).
 - **`plan`.** Which agents a change touches and because of which block, with a prompt diff per agent.
 - **`check`.** Duplicated text, number conflicts, "always X" vs "never X", unused variables.
-- **Import.** The `/opensop-import` skill for coding agents, with `overlap` and `compare` to prove nothing was lost.
+- **Import.** The `/sopc-import` skill for coding agents, with `overlap` and `compare` to prove nothing was lost.
 - **LiveKit example.** A TypeScript agent that loads its prompt from the build, with mock tools ([examples/livekit-restaurant](examples/livekit-restaurant)).
 
 ## Next

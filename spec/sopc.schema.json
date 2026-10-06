@@ -1,6 +1,6 @@
 {
   "additionalProperties": false,
-  "description": "opensop.yaml at the root of a opensop folder.",
+  "description": "sopc.yaml at the root of a sopc folder.",
   "properties": {
     "version": {
       "const": 1,
@@ -32,6 +32,6 @@
       "type": "array"
     }
   },
-  "title": "opensop.yaml",
+  "title": "sopc.yaml",
   "type": "object"
 }

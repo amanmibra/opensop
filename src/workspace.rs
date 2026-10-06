@@ -1,4 +1,4 @@
-//! Reading an OpenSOP folder into a [`Workspace`], and the checks that need all of it.
+//! Reading a sopc folder into a [`Workspace`], and the checks that need all of it.
 
 use crate::model::{self, Agent, Base, Config, Sop, Targeting};
 use crate::render::{find_variables, resolve_bases, resolve_sops, sop_payload};
@@ -75,10 +75,17 @@ pub fn agent_path(id: &str) -> String {
     format!("agents/{id}.yaml")
 }
 
-/// Whether a path (relative to the root, with `/`) is an OpenSOP source file.
+/// The file that marks the root of a sopc folder.
+pub const CONFIG: &str = "sopc.yaml";
+/// Its name before the project was renamed from OpenSOP (v0.0.5 and earlier). Read only to say
+/// how to migrate, and so `--against` a ref from before the rename still builds.
+pub const LEGACY_CONFIG: &str = "opensop.yaml";
+
+/// Whether a path (relative to the root, with `/`) is a sopc source file.
 pub fn is_source(rel: &str) -> bool {
     let (folder, name) = rel.rsplit_once('/').unwrap_or(("", rel));
-    rel == "opensop.yaml"
+    rel == CONFIG
+        || rel == LEGACY_CONFIG
         || (folder == "bases" && name.ends_with(".md"))
         || (folder == "procedures" && (name.ends_with(".yaml") || name.ends_with(".md")))
         || (folder == "agents" && name.ends_with(".yaml"))
@@ -127,17 +134,27 @@ pub fn stem(path: &str) -> &str {
     }
 }
 
+/// The error for a file map without [`CONFIG`]; says to rename [`LEGACY_CONFIG`] if that is there.
+pub fn missing_config(files: &BTreeMap<String, String>) -> Issues {
+    let message = if files.contains_key(LEGACY_CONFIG) {
+        format!("{CONFIG} not found, but {LEGACY_CONFIG} is: OpenSOP is now sopc; rename {LEGACY_CONFIG} to {CONFIG}")
+    } else {
+        format!("{CONFIG} not found")
+    };
+    Issues(vec![Issue::error("missing_config", "", message)])
+}
+
 /// Parses an in-memory file map (relative path → text).
 pub fn load_files(files: &BTreeMap<String, String>) -> Result<Workspace, Issues> {
-    let Some(config_text) = files.get("opensop.yaml") else {
-        return Err(Issues(vec![Issue::error("missing_config", "", "opensop.yaml not found")]));
+    let Some(config_text) = files.get(CONFIG) else {
+        return Err(missing_config(files));
     };
     let mut issues = vec![];
     let mut ws = Workspace::default();
-    if let Some(map) = load_yaml(config_text, "opensop.yaml", &mut issues) {
+    if let Some(map) = load_yaml(config_text, CONFIG, &mut issues) {
         match model::parse_config(&map) {
             Ok(config) => ws.config = config,
-            Err(errs) => field_errors(errs, "opensop.yaml", &mut issues),
+            Err(errs) => field_errors(errs, CONFIG, &mut issues),
         }
     }
     let in_folder = |folder: &'static str| {
@@ -373,11 +390,7 @@ pub fn validate(ws: &Workspace) -> Vec<Issue> {
         ));
     }
     for id in ws.config.sop_order.iter().filter(|id| ws.sop(id).is_none()) {
-        issues.push(Issue::error(
-            "unknown_sop",
-            "opensop.yaml",
-            format!("sop_order lists '{id}', which is not an SOP"),
-        ));
+        issues.push(Issue::error("unknown_sop", CONFIG, format!("sop_order lists '{id}', which is not an SOP")));
     }
 
     for agent in &ws.agents {

@@ -236,6 +236,15 @@ fn missing_config() {
     assert_eq!(codes(&load_issues(dir.path())), ["missing_config"]);
 }
 
+#[test]
+fn legacy_config_name_says_to_rename_it() {
+    let r = Repo::new();
+    std::fs::rename(r.root().join("sopc.yaml"), r.root().join("opensop.yaml")).unwrap();
+    let issues = load_issues(r.root());
+    assert_eq!(codes(&issues), ["missing_config"]);
+    assert!(issues[0].message.contains("rename opensop.yaml to sopc.yaml"), "{}", issues[0].message);
+}
+
 // --- rendering -------------------------------------------------------------------------------------
 
 fn file_names(dir: &Path) -> Vec<String> {
@@ -445,11 +454,11 @@ fn plan_reports_targeting_changes() {
 fn plan_attributes_default_variable_changes_to_workspace() {
     let r = Repo::new();
     let before = snapshot(&build(r.root()));
-    r.edit("opensop.yaml", "the manager on duty", "the shift lead");
+    r.edit("sopc.yaml", "the manager on duty", "the shift lead");
     let plan = make_plan(&before, &snapshot(&build(r.root())));
     assert_eq!(
         groups(&plan),
-        [("workspace:opensop.yaml".into(), "edited", strings(&["luigis-trattoria", "tonys-pizza"]))]
+        [("workspace:sopc.yaml".into(), "edited", strings(&["luigis-trattoria", "tonys-pizza"]))]
     );
 }
 
@@ -509,7 +518,7 @@ fn affected_without_a_base_is_every_agent() {
 }
 
 #[test]
-fn affected_requested_by_opensop_id_or_platform_id() {
+fn affected_requested_by_sopc_id_or_platform_id() {
     let r = Repo::new();
     r.edit("agents/luigis-trattoria.yaml", "livekit: luigis-trattoria", "vapi: asst_9f3e");
     let head = build(r.root());
@@ -585,7 +594,7 @@ fn compare_reports_changed_missing_and_reworded() {
     assert!(results["tonys-pizza"].reworded.iter().any(|u| u.starts_with("ALLERGIES:")));
     for r in results.values() {
         assert!(!r.ok() || (r.agent == "tonys-pizza" && r.changed.is_empty()), "{} should not be ok", r.agent);
-        assert!(!r.added.iter().any(|u| u.contains("tool.")), "opensop's own tool lines are not 'added'");
+        assert!(!r.added.iter().any(|u| u.contains("tool.")), "sopc's own tool lines are not 'added'");
     }
 }
 
@@ -689,7 +698,7 @@ fn fields_match_the_published_schemas() {
         ("base.schema.json", &BASE_FIELDS[..BASE_FIELDS.len() - 1], &[][..]), // "text" is the body, not front matter
         ("sop.schema.json", SOP_FIELDS, SOP_REQUIRED),
         ("agent.schema.json", AGENT_FIELDS, &[][..]),
-        ("opensop.schema.json", CONFIG_FIELDS, &[][..]),
+        ("sopc.schema.json", CONFIG_FIELDS, &[][..]),
     ] {
         let s = schema(file);
         assert_eq!(keys(&s["properties"]), fields, "{file} properties");
@@ -700,7 +709,7 @@ fn fields_match_the_published_schemas() {
     assert_eq!(list(&sop["properties"]["delivery"]["enum"]), DELIVERIES);
     assert_eq!(keys(&sop["$defs"]["Step"]["properties"]), STEP_FIELDS);
     assert_eq!(list(&sop["$defs"]["Step"]["required"]), STEP_REQUIRED);
-    assert_eq!(schema("opensop.schema.json")["properties"]["version"]["const"], 1);
+    assert_eq!(schema("sopc.schema.json")["properties"]["version"]["const"], 1);
     let agent = schema("agent.schema.json");
     assert!(PLATFORMS.iter().all(|p| agent["properties"].get(*p).is_some()));
 }

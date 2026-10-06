@@ -1,4 +1,4 @@
-//! The OpenSOP file formats (bases, SOPs, agents, opensop.yaml), parsed from YAML, and their
+//! The sopc file formats (bases, SOPs, agents, sopc.yaml), parsed from YAML, and their
 //! canonical JSON, which lock.json block hashes are taken over.
 //!
 //! The field lists below fix both what a file may contain and the order of keys in the
@@ -464,7 +464,7 @@ pub fn parse_agent(map: &Mapping) -> Result<Agent, Vec<String>> {
     finish(agent, e)
 }
 
-/// opensop.yaml.
+/// sopc.yaml.
 pub fn parse_config(map: &Mapping) -> Result<Config, Vec<String>> {
     let mut e = Errors::default();
     let f = Fields::new(map, "", CONFIG_FIELDS, &[], &mut e);

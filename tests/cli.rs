@@ -1,4 +1,4 @@
-//! Tests of the opensop binary: commands, flags, exit codes and files it writes.
+//! Tests of the sopc binary: commands, flags, exit codes and files it writes.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -22,8 +22,8 @@ struct Output {
     stderr: String,
 }
 
-fn opensop_in(dir: &Path, args: &[&str], env: &[(&str, &Path)]) -> Output {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_opensop"));
+fn sopc_in(dir: &Path, args: &[&str], env: &[(&str, &Path)]) -> Output {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_sopc"));
     cmd.args(args).current_dir(dir).env_remove("GITHUB_OUTPUT").env_remove("GITHUB_STEP_SUMMARY");
     for (k, v) in env {
         cmd.env(k, v);
@@ -36,10 +36,10 @@ fn opensop_in(dir: &Path, args: &[&str], env: &[(&str, &Path)]) -> Output {
     }
 }
 
-/// Runs opensop and checks the exit code.
+/// Runs sopc and checks the exit code.
 fn run(want: i32, args: &[&str]) -> Output {
-    let out = opensop_in(&repo_root(), args, &[]);
-    assert_eq!(out.code, want, "opensop {args:?}\nstdout: {}\nstderr: {}", out.stdout, out.stderr);
+    let out = sopc_in(&repo_root(), args, &[]);
+    assert_eq!(out.code, want, "sopc {args:?}\nstdout: {}\nstderr: {}", out.stdout, out.stderr);
     out
 }
 
@@ -91,7 +91,7 @@ fn render_check_and_plan() {
     run(0, &["render", &root, "--check"]);
     edit(&Path::new(&root).join("bases/closing.md"), "repeat the order total", "repeat the order and total");
     let out = run(1, &["render", &root, "--check"]);
-    assert!(out.stderr.contains("is out of date; run `opensop render`"));
+    assert!(out.stderr.contains("is out of date; run `sopc render`"));
     let out = run(0, &["plan", &root, "--summary"]);
     assert!(out.stdout.contains("base `closing` edited → 3 agents"), "{}", out.stdout);
 }
@@ -99,7 +99,7 @@ fn render_check_and_plan() {
 #[test]
 fn render_prints_a_tidy_output_path() {
     let (dir, _) = repo();
-    let out = opensop_in(dir.path(), &["render", "./sops/"], &[]);
+    let out = sopc_in(dir.path(), &["render", "./sops/"], &[]);
     assert_eq!(out.stdout, "wrote 6 files to sops/build\n");
 }
 
@@ -115,6 +115,20 @@ fn plan_against_a_git_ref() {
     assert!(out.stdout.contains("SOP `allergen-check` edited → 3 agents"), "{}", out.stdout);
     let out = run(1, &["plan", &root, "--against", "nope"]);
     assert!(out.stderr.starts_with("git ls-tree -r --name-only nope -- sops/: "), "{}", out.stderr);
+}
+
+#[test]
+fn plan_against_a_ref_from_before_the_rename() {
+    let (dir, root) = repo();
+    std::fs::rename(Path::new(&root).join("sopc.yaml"), Path::new(&root).join("opensop.yaml")).unwrap();
+    git(dir.path(), &["init", "-q", "-b", "main"]);
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+    let out = run(1, &["validate", &root]);
+    assert!(out.stderr.contains("rename opensop.yaml to sopc.yaml"), "{}", out.stderr);
+    git(dir.path(), &["mv", "sops/opensop.yaml", "sops/sopc.yaml"]);
+    let out = run(0, &["plan", &root, "--against", "main", "--summary"]);
+    assert!(out.stdout.contains("No agent prompts change."), "{}", out.stdout);
 }
 
 #[test]
@@ -285,7 +299,7 @@ fn affected_against_a_git_ref_writes_github_outputs() {
         "Repeat the specific allergen",
     );
     let (output, summary) = (dir.path().join("out"), dir.path().join("summary"));
-    let out = opensop_in(
+    let out = sopc_in(
         dir.path(),
         &["affected", &root, "--against", "main", "--all-if-none", "--ci"],
         &[("GITHUB_OUTPUT", &output), ("GITHUB_STEP_SUMMARY", &summary)],
@@ -350,16 +364,16 @@ fn overlap_and_check_run() {
 #[test]
 fn skills_install_covers_claude_code_codex_and_opencode() {
     let dir = tempfile::tempdir().unwrap();
-    let out = opensop_in(dir.path(), &["skills", "install"], &[]);
+    let out = sopc_in(dir.path(), &["skills", "install"], &[]);
     assert_eq!(out.code, 0);
-    let skill = read(&repo_root().join("skills/opensop-import/SKILL.md"));
+    let skill = read(&repo_root().join("skills/sopc-import/SKILL.md"));
     for folder in [".claude/skills", ".agents/skills"] {
-        assert_eq!(read(&dir.path().join(folder).join("opensop-import/SKILL.md")), skill);
+        assert_eq!(read(&dir.path().join(folder).join("sopc-import/SKILL.md")), skill);
     }
-    for cmd in ["opensop overlap", "opensop compare", "opensop check", "opensop guide"] {
+    for cmd in ["sopc overlap", "sopc compare", "sopc check", "sopc guide"] {
         assert!(skill.contains(cmd), "skill doesn't mention {cmd}");
     }
-    for s in ["/opensop-import", "$opensop-import", "OpenCode"] {
+    for s in ["/sopc-import", "$sopc-import", "OpenCode"] {
         assert!(out.stdout.contains(s), "output lacks {s}");
     }
 }
@@ -367,16 +381,16 @@ fn skills_install_covers_claude_code_codex_and_opencode() {
 #[test]
 fn skills_install_for_one_agent_or_folder() {
     let dir = tempfile::tempdir().unwrap();
-    assert_eq!(opensop_in(dir.path(), &["skills", "install", "--agent", "codex"], &[]).code, 0);
-    assert!(dir.path().join(".agents/skills/opensop-import/SKILL.md").exists());
+    assert_eq!(sopc_in(dir.path(), &["skills", "install", "--agent", "codex"], &[]).code, 0);
+    assert!(dir.path().join(".agents/skills/sopc-import/SKILL.md").exists());
     assert!(!dir.path().join(".claude").exists());
-    let out = opensop_in(dir.path(), &["skills", "install", "--dir", "custom"], &[]);
-    assert_eq!(out.stdout, "installed custom/opensop-import/SKILL.md\n\n");
+    let out = sopc_in(dir.path(), &["skills", "install", "--dir", "custom"], &[]);
+    assert_eq!(out.stdout, "installed custom/sopc-import/SKILL.md\n\n");
 }
 
 #[test]
 fn argument_errors_exit_2() {
-    assert!(run(2, &[]).stderr.contains("Usage: opensop <COMMAND>"));
+    assert!(run(2, &[]).stderr.contains("Usage: sopc <COMMAND>"));
     for args in [
         &["bogus"][..],
         &["render", "--foo"],
@@ -389,7 +403,7 @@ fn argument_errors_exit_2() {
         assert!(out.stderr.contains("error:"), "{args:?}: {}", out.stderr);
     }
     let out = run(0, &["render", "-h"]);
-    assert!(out.stdout.contains("Usage: opensop render [OPTIONS] [ROOT]"), "{}", out.stdout);
+    assert!(out.stdout.contains("Usage: sopc render [OPTIONS] [ROOT]"), "{}", out.stdout);
 }
 
 #[test]

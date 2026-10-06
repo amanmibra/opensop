@@ -159,6 +159,6 @@
     "name",
     "procedureSteps"
   ],
-  "title": "OpenSOP SOP: procedures/<id>.yaml",
+  "title": "sopc SOP: procedures/<id>.yaml",
   "type": "object"
 }

@@ -1,24 +1,24 @@
 #!/bin/sh
-# Install the opensop CLI: one prebuilt binary from GitHub Releases. No Python or uv needed.
+# Install sopc, the SOP compiler: one prebuilt binary from GitHub Releases. No Python or uv needed.
 #
-#   curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/amanmibra/sopc/main/install.sh | sh
 #
 # Options (environment variables):
-#   OPENSOP_REF=<tag>           install a specific release, e.g. v0.0.5 (default: the latest release)
-#   OPENSOP_INSTALL_DIR=<dir>   where to put the binary (default: ~/.local/bin)
+#   SOPC_REF=<tag>              install a specific release, e.g. v0.0.6 (default: the latest release)
+#   SOPC_INSTALL_DIR=<dir>      where to put the binary (default: ~/.local/bin)
 #
-# To build from a branch or commit instead, use Rust: cargo install --git https://github.com/amanmibra/opensop --branch <branch> (or --rev <commit>)
+# To build from a branch or commit instead, use Rust: cargo install --git https://github.com/amanmibra/sopc --branch <branch> (or --rev <commit>)
 
 set -eu
 
-REPO="amanmibra/opensop"
-REF="${OPENSOP_REF:-latest}"
-INSTALL_DIR="${OPENSOP_INSTALL_DIR:-$HOME/.local/bin}"
-# For testing against local release archives (and checksums.txt): OPENSOP_RELEASES_URL=file:///path/to/dist
-RELEASES_URL="${OPENSOP_RELEASES_URL:-}"
+REPO="amanmibra/sopc"
+REF="${SOPC_REF:-latest}"
+INSTALL_DIR="${SOPC_INSTALL_DIR:-$HOME/.local/bin}"
+# For testing against local release archives (and checksums.txt): SOPC_RELEASES_URL=file:///path/to/dist
+RELEASES_URL="${SOPC_RELEASES_URL:-}"
 
-say() { printf 'opensop: %s\n' "$1"; }
-fail() { printf 'opensop: error: %s\n' "$1" >&2; exit 1; }
+say() { printf 'sopc: %s\n' "$1"; }
+fail() { printf 'sopc: error: %s\n' "$1" >&2; exit 1; }
 
 case "$(uname -s)" in
   Linux) OS=linux ;;
@@ -33,17 +33,22 @@ case "$(uname -m)" in
 esac
 
 EXT=tar.gz
-BIN=opensop
+EXE=
 if [ "$OS" = windows ]; then
   EXT=zip
-  BIN=opensop.exe
+  EXE=.exe
 fi
-ASSET="opensop_${OS}_${ARCH}.${EXT}"
+BIN="sopc$EXE"
+ASSET="sopc_${OS}_${ARCH}.${EXT}"
+# Releases before v0.0.6 (when the project was named OpenSOP) ship opensop_<os>_<arch> archives
+# holding an `opensop` binary; it is installed as sopc.
+LEGACY_ASSET="opensop_${OS}_${ARCH}.${EXT}"
+SRC_BIN="$BIN"
 
 case "$REF" in
   latest | v[0-9]*) ;;
   [0-9]*) REF="v$REF" ;;
-  *) fail "OPENSOP_REF must be a release tag like v0.0.5 (got '$REF'). To build a branch or commit: cargo install --git https://github.com/$REPO --branch $REF (a commit: --rev $REF)" ;;
+  *) fail "SOPC_REF must be a release tag like v0.0.6 (got '$REF'). To build a branch or commit: cargo install --git https://github.com/$REPO --branch $REF (a commit: --rev $REF)" ;;
 esac
 
 if [ -n "$RELEASES_URL" ]; then
@@ -60,19 +65,24 @@ download() { # url dest
   elif command -v wget >/dev/null 2>&1; then
     wget -q "$1" -O "$2"
   else
-    fail "need curl or wget to download opensop"
+    fail "need curl or wget to download sopc"
   fi
 }
 
-TMP="$(mktemp -d 2>/dev/null || mktemp -d -t opensop)"
+TMP="$(mktemp -d 2>/dev/null || mktemp -d -t sopc)"
 trap 'rm -rf "$TMP"' EXIT INT TERM
 
 say "downloading $ASSET ($REF)"
 if ! download "$BASE/$ASSET" "$TMP/$ASSET" 2>/dev/null; then
-  if [ "$REF" = latest ]; then
-    fail "no opensop release found at https://github.com/$REPO/releases (none published yet?). Build from source instead: cargo install --git https://github.com/$REPO"
+  if download "$BASE/$LEGACY_ASSET" "$TMP/$LEGACY_ASSET" 2>/dev/null; then
+    say "release $REF predates the rename; using $LEGACY_ASSET"
+    ASSET="$LEGACY_ASSET"
+    SRC_BIN="opensop$EXE"
+  elif [ "$REF" = latest ]; then
+    fail "no sopc release found at https://github.com/$REPO/releases (none published yet?). Build from source instead: cargo install --git https://github.com/$REPO"
+  else
+    fail "release $REF not found, or it has no $ASSET. See https://github.com/$REPO/releases for available versions"
   fi
-  fail "release $REF not found, or it has no $ASSET. See https://github.com/$REPO/releases for available versions"
 fi
 
 # Verify the checksum when the release has one and a sha256 tool is available.
@@ -96,10 +106,10 @@ if [ "$EXT" = zip ]; then
 else
   tar -xzf "$TMP/$ASSET" -C "$TMP/x"
 fi
-[ -f "$TMP/x/$BIN" ] || fail "$ASSET doesn't contain $BIN"
+[ -f "$TMP/x/$SRC_BIN" ] || fail "$ASSET doesn't contain $SRC_BIN"
 
 mkdir -p "$INSTALL_DIR"
-cp "$TMP/x/$BIN" "$INSTALL_DIR/$BIN.tmp"
+cp "$TMP/x/$SRC_BIN" "$INSTALL_DIR/$BIN.tmp"
 chmod 755 "$INSTALL_DIR/$BIN.tmp"
 mv "$INSTALL_DIR/$BIN.tmp" "$INSTALL_DIR/$BIN"
 say "installed $INSTALL_DIR/$BIN"
@@ -112,4 +122,4 @@ case ":$PATH:" in
     ;;
 esac
 
-say "next: 'opensop skills install' in your repo, then run the opensop-import skill in Claude Code, Codex or OpenCode"
+say "next: 'sopc skills install' in your repo, then run the sopc-import skill in Claude Code, Codex or OpenCode"

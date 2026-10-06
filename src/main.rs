@@ -1,4 +1,4 @@
-//! The opensop command line.
+//! The sopc command line.
 
 mod analyze;
 mod model;
@@ -21,18 +21,18 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use text::{pretty_json, tidy};
-use workspace::{is_source, load, load_files, read_files, read_text, stem, Issue, Issues};
+use workspace::{is_source, load, load_files, read_files, read_text, stem, Issue, Issues, CONFIG, LEGACY_CONFIG};
 
-/// The format reference, printed by `opensop guide`.
+/// The format reference, printed by `sopc guide`.
 pub const FORMAT_MD: &str = include_str!("../FORMAT.md");
-/// Skills installed by `opensop skills install`: (name, SKILL.md).
-pub const SKILLS: &[(&str, &str)] = &[("opensop-import", include_str!("../skills/opensop-import/SKILL.md"))];
+/// Skills installed by `sopc skills install`: (name, SKILL.md).
+pub const SKILLS: &[(&str, &str)] = &[("sopc-import", include_str!("../skills/sopc-import/SKILL.md"))];
 
 #[derive(Parser)]
 #[command(
-    name = "opensop",
+    name = "sopc",
     version,
-    about = "Modular, git-versioned instructions for teams managing multiple task-driven agents."
+    about = "The SOP compiler: modular, git-versioned instructions for teams managing multiple task-driven agents."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -78,13 +78,13 @@ enum Command {
         /// Git ref to compare with; agents whose prompt changed are selected
         #[arg(long, value_name = "REF")]
         against: Option<String>,
-        /// Select these agents instead (OpenSOP ids or platform ids, space or comma separated)
+        /// Select these agents instead (sopc ids or platform ids, space or comma separated)
         #[arg(long)]
         agents: Option<String>,
         /// Select every agent when nothing else is selected
         #[arg(long)]
         all_if_none: bool,
-        /// ids: OpenSOP ids (file names); platform-ids: the platform's own ids; json: everything
+        /// ids: sopc ids (file names); platform-ids: the platform's own ids; json: everything
         #[arg(long, value_enum, default_value = "ids")]
         format: Format,
         /// Also write GitHub Actions outputs and a step summary
@@ -143,7 +143,7 @@ enum Command {
         #[arg(short = 'y', long)]
         yes: bool,
     },
-    /// Install the opensop skills for coding agents
+    /// Install the sopc skills for coding agents
     Skills {
         action: SkillsAction,
         /// Install for this coding agent only (repeatable) [default: Claude Code, Codex and OpenCode]
@@ -213,7 +213,7 @@ fn main() -> ExitCode {
             } else if let Some(git) = err.downcast_ref::<GitError>() {
                 eprintln!("{git}");
             } else {
-                eprintln!("opensop: error: {err:#}");
+                eprintln!("sopc: error: {err:#}");
             }
             ExitCode::FAILURE
         }
@@ -224,7 +224,7 @@ fn build(root: &Path) -> anyhow::Result<Build> {
     Ok(render_workspace(&load(root)?)?)
 }
 
-/// Builds the workspace as it was at a git ref; None when the ref has no OpenSOP files.
+/// Builds the workspace as it was at a git ref; None when the ref has no sopc files.
 fn build_at(root: &Path, git_ref: &str) -> anyhow::Result<Option<Build>> {
     let files = files_at_ref(root, git_ref)?;
     if files.is_empty() {
@@ -256,7 +256,7 @@ fn run(command: Command) -> anyhow::Result<ExitCode> {
                     println!("{} is up to date", out.display());
                     return Ok(ExitCode::SUCCESS);
                 }
-                eprintln!("{} is out of date; run `opensop render`\n", out.display());
+                eprintln!("{} is out of date; run `sopc render`\n", out.display());
                 eprintln!("{}", plan.text(false));
                 return Ok(ExitCode::FAILURE);
             }
@@ -282,7 +282,7 @@ fn run(command: Command) -> anyhow::Result<ExitCode> {
             if let Some(r) = &against {
                 base = build_at(&root, r)?;
                 if base.is_none() {
-                    eprintln!("no OpenSOP files at {r}; treating every agent as new");
+                    eprintln!("no sopc files at {r}; treating every agent as new");
                 }
             }
             let requested: Vec<String> =
@@ -352,8 +352,8 @@ fn run(command: Command) -> anyhow::Result<ExitCode> {
 /// The SOP files of a folder: (relative path, text).
 fn sop_files(root: &Path) -> anyhow::Result<Vec<(String, String)>> {
     let files = read_files(root)?;
-    if !files.contains_key("opensop.yaml") {
-        return Err(Issues(vec![Issue::error("missing_config", "", "opensop.yaml not found")]).into());
+    if !files.contains_key(CONFIG) {
+        return Err(workspace::missing_config(&files).into());
     }
     Ok(files.into_iter().filter(|(p, _)| p.starts_with("procedures/")).collect())
 }
@@ -417,7 +417,7 @@ fn fmt(root: &Path, check: bool, yaml: bool, yes: bool) -> anyhow::Result<ExitCo
     if check {
         let need = changed.len() + held.len();
         if need > 0 {
-            eprintln!("{need} file(s) need `opensop fmt`; {unchanged} already formatted");
+            eprintln!("{need} file(s) need `sopc fmt`; {unchanged} already formatted");
             return Ok(ExitCode::FAILURE);
         }
         println!("0 SOP file(s) would be reformatted, {unchanged} already formatted");
@@ -543,9 +543,9 @@ fn install_skills(agents: &[CodingAgent], dir: Option<PathBuf>) -> anyhow::Resul
     println!();
     for dest in &dests {
         match dest.to_str() {
-            Some(".claude/skills") => println!("Claude Code: /opensop-import"),
+            Some(".claude/skills") => println!("Claude Code: /sopc-import"),
             Some(".agents/skills") => {
-                println!("Codex: $opensop-import   OpenCode: ask it to use the opensop-import skill")
+                println!("Codex: $sopc-import   OpenCode: ask it to use the sopc-import skill")
             }
             _ => {}
         }
@@ -565,7 +565,7 @@ fn git(cwd: &Path, args: &[&str]) -> anyhow::Result<String> {
     Ok(workspace::universal_newlines(String::from_utf8_lossy(&output.stdout).into_owned()))
 }
 
-/// The OpenSOP source files under `root` as they were at a git ref.
+/// The sopc source files under `root` as they were at a git ref.
 fn files_at_ref(root: &Path, git_ref: &str) -> anyhow::Result<BTreeMap<String, String>> {
     let root = std::fs::canonicalize(root).with_context(|| format!("can't find {}", root.display()))?;
     let top = PathBuf::from(git(&root, &["rev-parse", "--show-toplevel"])?.trim());
@@ -582,6 +582,12 @@ fn files_at_ref(root: &Path, git_ref: &str) -> anyhow::Result<BTreeMap<String, S
         let Some(rel) = name.strip_prefix(&prefix) else { continue };
         if is_source(rel) {
             files.insert(rel.to_string(), git(&top, &["show", &format!("{git_ref}:{name}")])?);
+        }
+    }
+    // A ref from before the rename: read its opensop.yaml as the config.
+    if !files.contains_key(CONFIG) {
+        if let Some(text) = files.remove(LEGACY_CONFIG) {
+            files.insert(CONFIG.to_string(), text);
         }
     }
     Ok(files)

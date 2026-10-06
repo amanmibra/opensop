@@ -1,15 +1,15 @@
 ---
-name: opensop-import
-description: Convert existing voice/task agent prompts into OpenSOP files (shared bases, SOPs, one file per agent), verify nothing was lost, and report conflicts. Asks the user to fill gaps and approve a short import plan before writing files, and again before committing. Use when the user asks to import, migrate, modularize or "opensop-ify" agent prompts or instructions, or invokes this skill (/opensop-import in Claude Code, $opensop-import in Codex).
+name: sopc-import
+description: Convert existing voice/task agent prompts into sopc files (shared bases, SOPs, one file per agent), verify nothing was lost, and report conflicts. Asks the user to fill gaps and approve a short import plan before writing files, and again before committing. Use when the user asks to import, migrate, modularize or "sopc-ify" agent prompts or instructions, or invokes this skill (/sopc-import in Claude Code, $sopc-import in Codex).
 ---
 
-# Import existing prompts into OpenSOP
+# Import existing prompts into sopc
 
-You are turning a team's hand-written agent prompts into an OpenSOP folder: shared text written once, procedures as SOPs, and a short file per agent. The rendered prompts must say everything the originals said. You do the judgment; the `opensop` CLI does the counting and checking; the user makes the decisions.
+You are turning a team's hand-written agent prompts into a sopc folder: shared text written once, procedures as SOPs, and a short file per agent. The rendered prompts must say everything the originals said. You do the judgment; the `sopc` CLI does the counting and checking; the user makes the decisions.
 
 The flow has two approval checkpoints:
 
-1. **Before writing any OpenSOP file:** the user approves a one-screen import plan.
+1. **Before writing any sopc file:** the user approves a one-screen import plan.
 2. **Before committing or pushing:** the user approves a one-screen result summary.
 
 Never commit, push or open a pull request without the second approval.
@@ -23,17 +23,17 @@ Never commit, push or open a pull request without the second approval.
 
 ## 0. Set up the CLI (automatic)
 
-This skill needs the `opensop` command. Set it up without making the user do anything:
+This skill needs the `sopc` command. Set it up without making the user do anything:
 
-1. Run `opensop --version || opensop --help`. If it works, skip to step 3.
-2. If it's missing, tell the user in one line that you're installing the OpenSOP CLI (a single binary, into `~/.local/bin`), then run:
+1. Run `sopc --version || sopc --help`. If it works, skip to step 3.
+2. If it's missing, tell the user in one line that you're installing the sopc CLI (a single binary, into `~/.local/bin`), then run:
 
    ```
-   curl -fsSL https://raw.githubusercontent.com/amanmibra/opensop/main/install.sh | sh
+   curl -fsSL https://raw.githubusercontent.com/amanmibra/sopc/main/install.sh | sh
    ```
 
-   If `opensop` still isn't found afterwards, run it by its full path (`~/.local/bin/opensop`) for the rest of this skill, and tell the user to add `~/.local/bin` to their PATH. If the install fails (no network, unsupported platform), stop and show the user the error.
-3. Run `opensop guide` and read the whole format reference before writing any file.
+   If `sopc` still isn't found afterwards, run it by its full path (`~/.local/bin/sopc`) for the rest of this skill, and tell the user to add `~/.local/bin` to their PATH. If the install fails (no network, unsupported platform), stop and show the user the error.
+3. Run `sopc guide` and read the whole format reference before writing any file.
 
 ## 1. Collect the originals
 
@@ -48,13 +48,13 @@ For each agent:
 **Ask now (one batch), only what you couldn't find:**
 - Where prompts live, if you couldn't find all of them, and whether any agents should be left out.
 - Platform ids you couldn't find.
-- Where the OpenSOP folder should go (default: `sops/` at the repo root).
+- Where the sopc folder should go (default: `sops/` at the repo root).
 - Prompts assembled at runtime from data you can't see (e.g. a database): ask for an export or a sample.
 
 ## 2. Find what's shared
 
 ```
-opensop overlap sops/originals
+sopc overlap sops/originals
 ```
 
 This lists sentences shared by all agents, shared by subsets, near-copies that differ only by a value, and how much is unique to each agent. Use it as the map for the plan.
@@ -99,9 +99,9 @@ What belongs in "Decisions needed":
 - **Unclear classification.** Passages that could be a procedure or plain text.
 - **Contradictions you already see.** Report them, don't resolve them.
 
-## 4. Write the OpenSOP files
+## 4. Write the sopc files
 
-Create `sops/opensop.yaml`, `sops/bases/`, `sops/procedures/`, `sops/agents/`, following the approved plan and the format reference.
+Create `sops/sopc.yaml`, `sops/bases/`, `sops/procedures/`, `sops/agents/`, following the approved plan and the format reference.
 
 | Text in the originals | Goes to |
 |---|---|
@@ -147,7 +147,7 @@ Any other text from the passage goes here, as guidance.
 **Rules while writing:**
 - Preserve wording. Don't improve, shorten or merge instructions during import; that's a separate, reviewed step. Allowed edits: replacing a value with a `{{placeholder}}`, and removing a sentence that a shared block now provides.
 - Don't drop anything. If you can't place a sentence, put it in that agent's `instructions`.
-- In YAML files (agents, `opensop.yaml`), quote any string containing `: ` (colon space), or use a `|` block.
+- In YAML files (agents, `sopc.yaml`), quote any string containing `: ` (colon space), or use a `|` block.
 - Convert code placeholders like `${restaurantName}` to `{{restaurant_name}}` with a value per agent.
 
 If something comes up that the plan didn't cover and that changes what an agent would say, stop and ask before continuing.
@@ -155,20 +155,20 @@ If something comes up that the plan didn't cover and that changes what an agent 
 ## 5. Validate, render, compare. Repeat until clean.
 
 ```
-opensop fmt sops
-opensop validate sops
-opensop render sops
-opensop compare sops --originals sops/originals
+sopc fmt sops
+sopc validate sops
+sopc render sops
+sopc compare sops --originals sops/originals
 ```
 
-If `opensop fmt` lists a file it won't rewrite because that would remove comments, don't add `--yes`: leave the file, or move the comment's content somewhere it survives, and mention it to the user. Only use `--yes` if the user approves removing exactly those comments.
+If `sopc fmt` lists a file it won't rewrite because that would remove comments, don't add `--yes`: leave the file, or move the comment's content somewhere it survives, and mention it to the user. Only use `--yes` if the user approves removing exactly those comments.
 
 `compare` fails if any sentence from an original is **missing** or **changed** in the rendered prompt, and shows the changed words. Fix those; they're lost or altered instructions. **Reworded** lines (most words present, e.g. one sentence split into steps) don't fail; check each one says the same thing. **Added** lines should only be SOP headings and approved goals. Repeat until every agent passes.
 
 ## 6. Check for conflicts
 
 ```
-opensop check sops
+sopc check sops
 ```
 
 This finds duplicated sentences, the same sentence with different numbers, "do X" vs "never X", near-identical sentences that drifted, and unused variables. Then read each rendered prompt in `sops/build/` yourself for contradictions the CLI can't see (e.g. one block offers delivery while the agent says pickup only).
@@ -177,7 +177,7 @@ This finds duplicated sentences, the same sentence with different numbers, "do X
 
 ## 7. Checkpoint 2: the result summary
 
-Run `opensop fmt sops` once more (then `opensop render sops` if it changed anything) so the files are in canonical style. Then show one screen and ask before committing:
+Run `sopc fmt sops` once more (then `sopc render sops` if it changed anything) so the files are in canonical style. Then show one screen and ask before committing:
 
 ```
 Imported 30 agents into sops/
@@ -190,14 +190,14 @@ Conflicts to decide later (unchanged from today's behavior)
   1. upsell: "once" (29 agents) vs "twice" (luigis-trattoria), kept as a variable
   2. tonys-pizza says "pickup only after 10pm"; pizza-context says delivery until 11pm
 
-Files: sops/opensop.yaml, sops/bases/ (5), sops/procedures/ (4), sops/agents/ (30), sops/build/ (generated)
+Files: sops/sopc.yaml, sops/bases/ (5), sops/procedures/ (4), sops/agents/ (30), sops/build/ (generated)
 Not included: sops/originals/ (your old prompts, for reference; delete or add to .gitignore)
 
-Commit these on a new branch and open a PR? (default: commit on branch opensop-import, don't push)
+Commit these on a new branch and open a PR? (default: commit on branch sopc-import, don't push)
 ```
 
 Only commit, push or open a PR after the user says so, and only as far as they said (commit only, push, or PR). Don't include `sops/originals/` unless asked.
 
 Then list the next steps:
 - Load each agent's prompt from `sops/build/<id>.prompt.md` in the agent code instead of the hard-coded string.
-- Before future edits, run `opensop plan sops --against main` to see which agents a change reaches.
+- Before future edits, run `sopc plan sops --against main` to see which agents a change reaches.
