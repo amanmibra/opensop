@@ -240,9 +240,17 @@ Set exactly one platform field. Elsewhere in OpenSOP, refer to the agent by its 
 
 ## Formatting and converting
 
-`opensop fmt <root>` rewrites every SOP file, Markdown and YAML, in one canonical style: Markdown sections in the standard order, numbered steps, `-` bullets, one blank line between blocks, markers as `` `tool: name` `` then `` `required` ``; YAML keys in a fixed order (`name`, the settings, `description`, `scope`, `guidance`, then the step lists), default settings left out, multi-line text as `|` blocks. A Markdown SOP's front matter is kept as written. In a YAML SOP, the comment block at the top of the file is kept and other comments are removed. `opensop fmt <root> --check` writes nothing, lists the files that would change and exits 1 if there are any (for CI).
+`opensop fmt <root>` rewrites Markdown SOP files in one canonical style: sections in the standard order, numbered steps, `-` bullets, one blank line between blocks, markers as `` `tool: name` `` then `` `required` ``. Front matter is kept as written. Add `--yaml` to format YAML SOP files too: keys in a fixed order (`name`, the settings, `description`, `scope`, `guidance`, then the step lists), default settings left out, multi-line text as `|` blocks. `opensop fmt <root> --check` writes nothing, lists the files that would change and exits 1 if there are any (for CI).
 
 `opensop convert <root> --to md` (or `--to yaml`) rewrites SOPs in the other format: all of them, or the ids given (`opensop convert sops --to md allergen-check`). It writes the new file and deletes the old one. Comments at the top of a YAML file become front-matter comments, and back.
+
+**Nothing destructive happens without `-y` / `--yes`.** Some rewrites can't keep every comment: a YAML file's comments below the top block, or trailing comments on front-matter settings when converting to YAML. Both commands leave such a file as it is, list it with the exact comments it would lose, and exit 1. Edit it by hand, or rerun with `--yes` to remove those comments:
+
+```
+procedures/takeout.yaml: not formatted: it would remove 2 comment(s); edit it by hand, or rerun with --yes to remove them
+  line 2: # the heading agents see
+  line 6: # ask first
+```
 
 Neither command changes any agent's prompt or `get_sop` payload; each checks this and refuses a file it can't rewrite exactly (`convert_failed`), e.g. a YAML `description` with line breaks, which a Markdown field can't keep. Converting may change SOP hashes in `build/lock.json` when only whitespace differs (e.g. the trailing newline of a `|` block).
 

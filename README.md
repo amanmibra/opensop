@@ -138,8 +138,8 @@ $ opensop plan sops --against main
 | `opensop agents sops` | List agents with their platform ids, SOPs and tools (`--json` for CI) |
 | `opensop affected sops --against main` | Which agents to test for a change, with the SOPs that changed (`--ci` for GitHub Actions) |
 | `opensop check sops` | Duplicated text and conflicting instructions |
-| `opensop fmt sops` | Rewrite SOP files in canonical style (`--check` for CI) |
-| `opensop convert sops --to md` | Rewrite YAML SOPs as Markdown (or `--to yaml`), without changing any prompt |
+| `opensop fmt sops` | Rewrite Markdown SOPs in canonical style (`--yaml` for YAML too, `--check` for CI) |
+| `opensop convert sops --to md` | Rewrite YAML SOPs as Markdown (or `--to yaml`), without changing any prompt; changes that would drop comments need `--yes` |
 | `opensop overlap <dir>` | What a set of existing prompts have in common |
 | `opensop compare sops --originals <dir>` | Confirm built prompts still say everything the originals did |
 | `opensop skills install` | Install the import skill for Claude Code, Codex and OpenCode |

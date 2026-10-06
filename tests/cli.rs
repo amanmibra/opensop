@@ -170,7 +170,15 @@ fn convert_round_trip_keeps_every_prompt_and_tool_json() {
         assert!(sop_files(&root).iter().all(|n| n.ends_with(".md")));
         assert_eq!(built(&root, &dir.path().join("b1")), before);
         run(0, &["fmt", &root, "--check"]);
-        run(0, &["convert", &root, "--to", "yaml"]);
+        if src == example() {
+            // The example's front matter has trailing comments that YAML output can't keep:
+            // converting back refuses until approved, and lists them.
+            let out = run(1, &["convert", &root, "--to", "yaml"]);
+            assert!(out.stderr.contains("not converted: it would remove"), "{}", out.stderr);
+            run(0, &["convert", &root, "--to", "yaml", "--yes"]);
+        } else {
+            run(0, &["convert", &root, "--to", "yaml"]);
+        }
         assert_eq!(built(&root, &dir.path().join("b2")), before);
         if src == fixture().join("sops") {
             let now: Vec<(String, String)> = sop_files(&root)
@@ -198,17 +206,21 @@ fn convert_some_sops_and_unknown_ids() {
 fn fmt_check_exit_codes() {
     let (_dir, root) = repo();
     let out = run(0, &["fmt", &root, "--check"]);
+    assert!(out.stdout.contains("4 YAML SOP file(s) not checked; add --yaml"), "{}", out.stdout);
+    let out = run(0, &["fmt", &root, "--check", "--yaml"]);
     assert_eq!(out.stdout, "0 SOP file(s) would be reformatted, 4 already formatted\n");
     let file = Path::new(&root).join("procedures/reservations.yaml");
     edit(&file, "name: Reservations\n", "\nname:   Reservations\ndelivery: prompt\n");
     let messy = read(&file);
-    let out = run(1, &["fmt", &root, "--check"]);
+    run(0, &["fmt", &root]); // YAML isn't touched without --yaml
+    assert_eq!(read(&file), messy);
+    let out = run(1, &["fmt", &root, "--check", "--yaml"]);
     assert_eq!(out.stdout, "would reformat procedures/reservations.yaml\n");
     assert_eq!(read(&file), messy, "--check writes nothing");
-    let out = run(0, &["fmt", &root]);
+    let out = run(0, &["fmt", &root, "--yaml"]);
     assert!(out.stdout.starts_with("formatted procedures/reservations.yaml\n"), "{}", out.stdout);
     assert!(read(&file).starts_with("name: Reservations\nagents:"));
-    run(0, &["fmt", &root, "--check"]);
+    run(0, &["fmt", &root, "--check", "--yaml"]);
     std::fs::write(Path::new(&root).join("procedures/broken.md"), "# Broken\n## Notes\n").unwrap();
     let out = run(1, &["fmt", &root]);
     assert!(out.stderr.contains("procedures/broken.md: error [md_unknown_section] line 2:"), "{}", out.stderr);
@@ -378,4 +390,31 @@ fn argument_errors_exit_2() {
     }
     let out = run(0, &["render", "-h"]);
     assert!(out.stdout.contains("Usage: opensop render [OPTIONS] [ROOT]"), "{}", out.stdout);
+}
+
+#[test]
+fn rewrites_that_would_remove_comments_need_yes() {
+    let (_dir, root) = repo();
+    let file = Path::new(&root).join("procedures/reservations.yaml");
+    edit(&file, "name: Reservations\n", "name:   Reservations   # the heading\n");
+    edit(&file, "procedureSteps:\n", "procedureSteps:\n  # ask first\n");
+    let original = read(&file);
+
+    let out = run(1, &["fmt", &root, "--yaml"]);
+    assert!(
+        out.stderr.contains("procedures/reservations.yaml: not formatted: it would remove 2 comment(s)"),
+        "{}",
+        out.stderr
+    );
+    assert!(out.stderr.contains("# the heading") && out.stderr.contains("# ask first"), "{}", out.stderr);
+    assert_eq!(read(&file), original, "nothing is written without --yes");
+    run(1, &["fmt", &root, "--yaml", "--check"]);
+
+    let out = run(1, &["convert", &root, "--to", "md", "reservations"]);
+    assert!(out.stderr.contains("not converted: it would remove 2 comment(s)"), "{}", out.stderr);
+    assert_eq!(read(&file), original);
+
+    run(0, &["fmt", &root, "--yaml", "-y"]);
+    assert!(!read(&file).contains("# ask first"));
+    run(0, &["fmt", &root, "--yaml", "--check"]);
 }

@@ -118,13 +118,19 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Rewrite SOP files (Markdown and YAML) in canonical style
+    /// Rewrite Markdown SOP files in canonical style (YAML ones with --yaml)
     Fmt {
         #[arg(default_value = ".")]
         root: PathBuf,
         /// List files that would change and fail if any, without writing
         #[arg(long)]
         check: bool,
+        /// Also rewrite YAML SOP files
+        #[arg(long)]
+        yaml: bool,
+        /// Allow changes that remove comments (otherwise those files are listed and left as is)
+        #[arg(short = 'y', long)]
+        yes: bool,
     },
     /// Rewrite SOPs as Markdown or YAML (all of them, or the ids given)
     Convert {
@@ -133,6 +139,9 @@ enum Command {
         to: SopFormat,
         /// SOP ids [default: every SOP not already in that format]
         ids: Vec<String>,
+        /// Allow changes that remove comments (otherwise those files are listed and left as is)
+        #[arg(short = 'y', long)]
+        yes: bool,
     },
     /// Install the opensop skills for coding agents
     Skills {
@@ -326,13 +335,13 @@ fn run(command: Command) -> anyhow::Result<ExitCode> {
                 print!("{}", analyze::check_text(&findings));
             }
         }
-        Command::Fmt { root, check } => return fmt(&root, check),
-        Command::Convert { root, to, ids } => {
+        Command::Fmt { root, check, yaml, yes } => return fmt(&root, check, yaml, yes),
+        Command::Convert { root, to, ids, yes } => {
             let to = match to {
                 SopFormat::Md => Kind::Markdown,
                 SopFormat::Yaml => Kind::Yaml,
             };
-            convert(&root, to, &ids)?;
+            return convert(&root, to, &ids, yes);
         }
         Command::Skills { action: SkillsAction::Install, agent, dir } => install_skills(&agent, dir)?,
         Command::Guide => print!("{FORMAT_MD}"),
@@ -349,12 +358,42 @@ fn sop_files(root: &Path) -> anyhow::Result<Vec<(String, String)>> {
     Ok(files.into_iter().filter(|(p, _)| p.starts_with("procedures/")).collect())
 }
 
-fn fmt(root: &Path, check: bool) -> anyhow::Result<ExitCode> {
-    let (mut changed, mut errors, mut total) = (vec![], vec![], 0);
+/// Comments a rewrite of a file would remove, as "line N: # text".
+fn lost_comment_lines(path: &str, text: &str, new: &str) -> Vec<String> {
+    sopfile::lost_comments(path, text, new).iter().map(|(n, c)| format!("line {n}: # {c}")).collect()
+}
+
+/// Files left as they are because rewriting them would remove comments (destructive changes
+/// need --yes). They're reported like check failures, with the comments that would go.
+fn report_held(held: &[(String, Vec<String>)], action: &str) {
+    for (path, lost) in held {
+        eprintln!(
+            "{path}: not {action}: it would remove {} comment(s); edit it by hand, or rerun with --yes to remove them",
+            lost.len()
+        );
+        for line in lost {
+            eprintln!("  {line}");
+        }
+    }
+}
+
+fn fmt(root: &Path, check: bool, yaml: bool, yes: bool) -> anyhow::Result<ExitCode> {
+    let (mut changed, mut held, mut errors, mut total, mut skipped) = (vec![], vec![], vec![], 0, 0);
     for (path, text) in sop_files(root)? {
+        if Kind::of(&path) == Kind::Yaml && !yaml {
+            skipped += 1; // YAML is only rewritten on request: --yaml
+            continue;
+        }
         total += 1;
         match sopfile::rewrite(&path, &text, Kind::of(&path)) {
-            Ok((_, new)) if new != text => changed.push((path, new)),
+            Ok((_, new)) if new != text => {
+                let lost = lost_comment_lines(&path, &text, &new);
+                if lost.is_empty() || yes {
+                    changed.push((path, new));
+                } else {
+                    held.push((path, lost));
+                }
+            }
             Ok(_) => {}
             Err(e) => errors.extend(e),
         }
@@ -370,23 +409,35 @@ fn fmt(root: &Path, check: bool) -> anyhow::Result<ExitCode> {
             println!("formatted {path}");
         }
     }
-    let unchanged = total - changed.len();
-    if check && !changed.is_empty() {
-        eprintln!("{} file(s) need `opensop fmt`; {unchanged} already formatted", changed.len());
+    report_held(&held, "formatted");
+    if skipped > 0 {
+        println!("{skipped} YAML SOP file(s) not checked; add --yaml to format them too");
+    }
+    let unchanged = total - changed.len() - held.len();
+    if check {
+        let need = changed.len() + held.len();
+        if need > 0 {
+            eprintln!("{need} file(s) need `opensop fmt`; {unchanged} already formatted");
+            return Ok(ExitCode::FAILURE);
+        }
+        println!("0 SOP file(s) would be reformatted, {unchanged} already formatted");
+        return Ok(ExitCode::SUCCESS);
+    }
+    println!("{} SOP file(s) reformatted, {unchanged} already formatted", changed.len());
+    if !held.is_empty() {
+        eprintln!("{} file(s) not formatted (they'd lose comments)", held.len());
         return Ok(ExitCode::FAILURE);
     }
-    let done = if check { "would be reformatted" } else { "reformatted" };
-    println!("{} SOP file(s) {done}, {unchanged} already formatted", changed.len());
     Ok(ExitCode::SUCCESS)
 }
 
-fn convert(root: &Path, to: Kind, ids: &[String]) -> anyhow::Result<()> {
+fn convert(root: &Path, to: Kind, ids: &[String], yes: bool) -> anyhow::Result<ExitCode> {
     let files = sop_files(root)?;
     let mut errors = vec![];
     for id in ids.iter().filter(|id| !files.iter().any(|(p, _)| stem(p) == id.as_str())) {
         errors.push(Issue::error("unknown_sop", "", format!("'{id}' is not an SOP in {}", root.display())));
     }
-    let mut out = vec![];
+    let (mut out, mut held) = (vec![], vec![]);
     for (path, text) in &files {
         if Kind::of(path) == to || !(ids.is_empty() || ids.iter().any(|id| id == stem(path))) {
             continue;
@@ -395,7 +446,14 @@ fn convert(root: &Path, to: Kind, ids: &[String]) -> anyhow::Result<()> {
             Ok((new_path, _)) if files.iter().any(|(p, _)| *p == new_path) => {
                 errors.push(Issue::error("duplicate_file", path, format!("{new_path} already exists")));
             }
-            Ok((new_path, new)) => out.push((path, new_path, new)),
+            Ok((new_path, new)) => {
+                let lost = lost_comment_lines(path, text, &new);
+                if lost.is_empty() || yes {
+                    out.push((path, new_path, new));
+                } else {
+                    held.push((path.clone(), lost));
+                }
+            }
             Err(e) => errors.extend(e),
         }
     }
@@ -407,10 +465,11 @@ fn convert(root: &Path, to: Kind, ids: &[String]) -> anyhow::Result<()> {
         std::fs::remove_file(root.join(old))?;
         println!("converted {old} -> {new_path}");
     }
-    if out.is_empty() {
+    report_held(&held, "converted");
+    if out.is_empty() && held.is_empty() {
         println!("nothing to convert");
     }
-    Ok(())
+    Ok(if held.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE })
 }
 
 fn append(path: &str, text: &str) -> anyhow::Result<()> {

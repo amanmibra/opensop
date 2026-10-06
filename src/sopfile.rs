@@ -449,6 +449,41 @@ fn comments(text: &str) -> Vec<&str> {
     lines[start..end.max(start)].to_vec()
 }
 
+/// Comments in `text` (whole-line or trailing) that `new_text` no longer contains, as
+/// (line number, comment). Editor schema hints are ignored: they belong to one format.
+pub fn lost_comments(path: &str, text: &str, new_text: &str) -> Vec<(usize, String)> {
+    let scope = match Kind::of(path) {
+        Kind::Yaml => text,
+        Kind::Markdown => split_front_matter(text).0,
+    };
+    let offset = if Kind::of(path) == Kind::Markdown && text.starts_with("---") { 1 } else { 0 };
+    scope
+        .lines()
+        .enumerate()
+        .filter_map(|(i, line)| comment_of(line).map(|c| (i + 1 + offset, c)))
+        .filter(|(_, c)| !c.contains("yaml-language-server") && !new_text.contains(c.as_str()))
+        .collect()
+}
+
+/// The comment on a YAML line (text after a `#` that starts the line or follows whitespace,
+/// outside quotes), trimmed, if there is one.
+fn comment_of(line: &str) -> Option<String> {
+    let (mut quote, mut prev) = (None, ' ');
+    for (i, ch) in line.char_indices() {
+        match (quote, ch) {
+            (None, '"' | '\'') => quote = Some(ch),
+            (Some(q), c) if c == q => quote = None,
+            (None, '#') if prev.is_whitespace() => {
+                let c = line[i + 1..].trim();
+                return (!c.is_empty()).then(|| c.to_string());
+            }
+            _ => {}
+        }
+        prev = ch;
+    }
+    None
+}
+
 /// What in two SOPs' rendered output differs, if anything.
 fn output_difference(a: &Sop, b: &Sop) -> Option<String> {
     let (pa, pb) = (sop_payload(a), sop_payload(b));
