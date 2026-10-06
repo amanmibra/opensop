@@ -2,9 +2,9 @@
 
 # 📋🧩 sopc
 
-**The SOP compiler: modular, git-versioned instructions for teams managing multiple task-driven agents.**
+**dbt for agent instructions.**
 
-*dbt for agent instructions.*
+The SOP compiler: modular, git-versioned instructions for teams managing multiple task-driven agents.
 
 Write shared instructions and SOPs once. sopc compiles each agent's full prompt<br>
 and shows exactly which agents a change touches.

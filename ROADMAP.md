@@ -16,12 +16,14 @@ sopc is the format for writing, versioning and building agent instructions, plus
 1. **Tool check.** Warn when an SOP names a tool the agent doesn't register.
 2. **More checks.** Vague or uncheckable rules, prompt length per agent.
 
+3. **`sopc test`.** Test cases kept in the repo (caller turns, mock tool results, what a good agent does), run against just the agents a change affects, the way `dbt test` runs on the models a change touches. The [behavior gate](examples/behavior-gate) and [Braintrust example](examples/braintrust-evals) are the manual version today; grading itself would come from sopqa.
+
 Beyond that, the next steps come from teams using it.
 
 ## Out of scope (other tools read the format)
 
 - **Serving prompts at call start, publishing on merge:** sopserve, a separate project.
-- **Evaluating calls against SOPs:** QA and evaluation tools. `lock.json` tells them exactly which SOP version each call ran with.
+- **Evaluating calls against SOPs and suggesting changes:** sopqa (planned) or any QA tool. `lock.json` tells them exactly which SOP version each call ran with, and `locked: true` marks blocks they must not suggest changes to.
 - **Editors and UIs.**
 
 ## Principles
