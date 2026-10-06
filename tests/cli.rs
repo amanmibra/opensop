@@ -85,22 +85,116 @@ fn git_repo() -> (tempfile::TempDir, String) {
 }
 
 #[test]
-fn render_check_and_plan() {
-    let (_dir, root) = repo();
-    run(0, &["render", &root]);
-    run(0, &["render", &root, "--check"]);
+fn compile_check_and_plan() {
+    let (dir, root) = git_repo();
+    run(0, &[&root]);
+    run(0, &[&root, "--check"]);
     edit(&Path::new(&root).join("bases/closing.md"), "repeat the order total", "repeat the order and total");
-    let out = run(1, &["render", &root, "--check"]);
-    assert!(out.stderr.contains("is out of date; run `sopc render`"));
-    let out = run(0, &["plan", &root, "--summary"]);
+    let out = run(1, &[&root, "--check"]);
+    assert!(out.stderr.contains("is out of date; run `sopc`"), "{}", out.stderr);
+    // No --against: compares with main, the only branch.
+    let out = sopc_in(dir.path(), &["plan", "--summary"], &[]);
     assert!(out.stdout.contains("base `closing` edited → 3 agents"), "{}", out.stdout);
 }
 
 #[test]
-fn render_prints_a_tidy_output_path() {
+fn compile_prints_a_tidy_output_path() {
     let (dir, _) = repo();
-    let out = sopc_in(dir.path(), &["render", "./sops/"], &[]);
+    let out = sopc_in(dir.path(), &["./sops/"], &[]);
     assert_eq!(out.stdout, "wrote 6 files to sops/build\n");
+}
+
+#[test]
+fn bare_sopc_compiles_the_default_folder() {
+    let (dir, _) = repo();
+    let out = sopc_in(dir.path(), &[], &[]);
+    assert_eq!((out.code, out.stdout.as_str()), (0, "wrote 6 files to sops/build\n"), "{}", out.stderr);
+    let out = sopc_in(dir.path(), &["--check"], &[]);
+    assert_eq!((out.code, out.stdout.as_str()), (0, "sops/build is up to date\n"), "{}", out.stderr);
+    let out = sopc_in(dir.path(), &["-o", "dist"], &[]);
+    assert_eq!(out.stdout, "wrote 6 files to dist\n");
+    let out = sopc_in(dir.path(), &["--out", "dist", "--check"], &[]);
+    assert_eq!(out.stdout, "dist is up to date\n");
+    for cmd in [&["validate"][..], &["check"], &["fmt", "--check"], &["agents"]] {
+        assert_eq!(sopc_in(dir.path(), cmd, &[]).code, 0, "{cmd:?}");
+    }
+    // An explicit folder wins over the default one.
+    let out = sopc_in(dir.path(), &["sops", "-o", "elsewhere"], &[]);
+    assert_eq!(out.stdout, "wrote 6 files to elsewhere\n");
+    let sops = dir.path().join("sops");
+    assert_eq!(sopc_in(&sops, &["."], &[]).stdout, "wrote 6 files to build\n");
+}
+
+#[test]
+fn default_folder_is_sops_then_the_current_one() {
+    let (dir, _) = repo();
+    // sops/sopc.yaml wins even when ./sopc.yaml exists too.
+    copy_dir(&fixture().join("sops"), &dir.path().join("other"));
+    std::fs::copy(dir.path().join("sops/sopc.yaml"), dir.path().join("sopc.yaml")).unwrap();
+    assert_eq!(sopc_in(dir.path(), &[], &[]).stdout, "wrote 6 files to sops/build\n");
+    // Inside the folder itself, ./ is used.
+    let other = dir.path().join("other");
+    assert_eq!(sopc_in(&other, &[], &[]).stdout, "wrote 6 files to build\n");
+    assert_eq!(sopc_in(&other, &["validate"], &[]).code, 0);
+    // Neither: an error that says what to pass.
+    let empty = tempfile::tempdir().unwrap();
+    for args in [&[][..], &["validate"], &["plan"], &["convert", "--to", "md"]] {
+        let out = sopc_in(empty.path(), args, &[]);
+        assert_eq!(out.code, 1, "{args:?}");
+        assert!(
+            out.stderr.contains(
+                "error [missing_config] no sopc.yaml in ./sops or ./ (pass the folder, e.g. `sopc path/to/sops`)"
+            ),
+            "{args:?}: {}",
+            out.stderr
+        );
+    }
+    // A default folder with the old config name still explains the rename.
+    let legacy = tempfile::tempdir().unwrap();
+    copy_dir(&fixture().join("sops"), &legacy.path().join("sops"));
+    std::fs::rename(legacy.path().join("sops/sopc.yaml"), legacy.path().join("sops/opensop.yaml")).unwrap();
+    let out = sopc_in(legacy.path(), &["validate"], &[]);
+    assert!(out.stderr.contains("rename opensop.yaml to sopc.yaml"), "{}", out.stderr);
+}
+
+#[test]
+fn a_command_name_is_never_read_as_a_folder() {
+    let (dir, _) = repo();
+    std::fs::create_dir(dir.path().join("check")).unwrap();
+    let out = sopc_in(dir.path(), &["check"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(!dir.path().join("check/build").exists());
+    let out = sopc_in(dir.path(), &["nope"], &[]);
+    assert!(out.stderr.contains("nope is not a folder"), "{}", out.stderr);
+}
+
+#[test]
+fn plan_with_nothing_to_compare_against() {
+    let (_dir, root) = repo();
+    let out = run(1, &["plan", &root]);
+    assert!(out.stderr.contains("nothing to compare against; pass --against <ref>"), "{}", out.stderr);
+    let out = run(0, &["affected", &root]);
+    assert_eq!(out.stdout.lines().count(), 3, "every agent: {}", out.stdout);
+}
+
+#[test]
+fn default_ref_prefers_origin_head_and_explicit_against_wins() {
+    let (dir, root) = git_repo();
+    git(dir.path(), &["branch", "trunk"]);
+    edit(&Path::new(&root).join("bases/closing.md"), "repeat the order total", "repeat the order and total");
+    git(dir.path(), &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "edit"]);
+    // main is HEAD now: no change against it.
+    let out = sopc_in(dir.path(), &["plan", "--summary"], &[]);
+    assert!(out.stdout.contains("No agent prompts change."), "{}", out.stdout);
+    let out = sopc_in(dir.path(), &["plan", "--summary", "--against", "trunk"], &[]);
+    assert!(out.stdout.contains("base `closing` edited → 3 agents"), "{}", out.stdout);
+    // origin/HEAD, when set, comes before main.
+    git(dir.path(), &["update-ref", "refs/remotes/origin/trunk", "trunk"]);
+    git(dir.path(), &["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk"]);
+    let out = sopc_in(dir.path(), &["affected"], &[]);
+    assert_eq!(out.stdout, "luigis-trattoria\nsakura-sushi\ntonys-pizza\n", "{}", out.stderr);
+    let out = sopc_in(dir.path(), &["affected", "--against", "main"], &[]);
+    assert_eq!(out.stdout, "");
 }
 
 #[test]
@@ -145,13 +239,13 @@ fn example_is_valid_and_its_build_is_current() {
     let ex = example().to_string_lossy().into_owned();
     let out = run(0, &["validate", &ex]);
     assert_eq!((out.stdout.as_str(), out.stderr.as_str()), ("0 error(s), 0 warning(s)\n", ""));
-    run(0, &["render", &ex, "--check"]);
+    run(0, &[&ex, "--check"]);
     run(0, &["check", &ex]);
     run(0, &["fmt", &ex, "--check"]);
 }
 
 fn built(root: &str, out: &Path) -> std::collections::BTreeMap<String, String> {
-    run(0, &["render", root, "--out", &out.to_string_lossy()]);
+    run(0, &[root, "--out", &out.to_string_lossy()]);
     let files = std::fs::read_dir(out).unwrap().map(|e| e.unwrap().path());
     files
         .filter(|p| !p.ends_with("lock.json"))
@@ -261,14 +355,15 @@ fn format_reference_lists_every_validation_code() {
 
 #[test]
 fn plan_json_and_agents_json() {
-    let (_dir, root) = repo();
-    run(0, &["render", &root]);
+    let (_dir, root) = git_repo();
+    run(0, &[&root]);
     edit(
         &Path::new(&root).join("procedures/reservations.yaml"),
         "Never double-book a table",
         "Never double-book or overbook a table",
     );
-    let plan: serde_json::Value = serde_json::from_str(&run(0, &["plan", &root, "--json"]).stdout).unwrap();
+    let plan: serde_json::Value =
+        serde_json::from_str(&run(0, &["plan", &root, "--against", "main", "--json"]).stdout).unwrap();
     let got: Vec<String> = plan["changes"]
         .as_array()
         .unwrap()
@@ -390,20 +485,23 @@ fn skills_install_for_one_agent_or_folder() {
 
 #[test]
 fn argument_errors_exit_2() {
-    assert!(run(2, &[]).stderr.contains("Usage: sopc <COMMAND>"));
     for args in [
-        &["bogus"][..],
-        &["render", "--foo"],
+        &["--foo"][..],
+        &["sops", "validate"],
+        &["validate", "--jso"],
         &["affected", "--format", "xx"],
         &["compare"],
-        &["render", "--out"],
+        &["--out"],
         &["skills", "foo"],
     ] {
         let out = run(2, args);
         assert!(out.stderr.contains("error:"), "{args:?}: {}", out.stderr);
     }
-    let out = run(0, &["render", "-h"]);
-    assert!(out.stdout.contains("Usage: sopc render [OPTIONS] [ROOT]"), "{}", out.stdout);
+    let out = run(0, &["--help"]);
+    assert!(out.stdout.contains("Usage: sopc [DIR] [-o DIR] [--check]\n       sopc <COMMAND>"), "{}", out.stdout);
+    assert!(out.stdout.contains("Run `sopc` to compile"), "{}", out.stdout);
+    let out = run(0, &["plan", "-h"]);
+    assert!(out.stdout.contains("Usage: sopc plan [OPTIONS] [DIR]"), "{}", out.stdout);
 }
 
 #[test]
