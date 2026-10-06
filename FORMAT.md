@@ -23,7 +23,7 @@ Each voice agent's prompt is assembled from three kinds of blocks. **Bases** are
 - **Ids are file names** without the extension: `bases/brand-voice.md` has id `brand-voice`. Use lowercase kebab-case.
 - An id must be unique across bases and SOPs. An SOP is either `<id>.md` or `<id>.yaml`, not both.
 - Files outside these folders are ignored.
-- Every command works on `./sops` if `sops/sopc.yaml` exists, else on the current folder if `sopc.yaml` is there. Use `--dir` (or `-C`) for another folder, on any command: `sopc --dir path/to/sops`, `sopc validate --dir path/to/sops`.
+- Every command works on `./sops` if `sops/sopc.yaml` exists, else on the current folder if `sopc.yaml` is there. Use `--dir` (or `-C`) for another folder; see [CLI.md](https://github.com/amanmibra/sopc/blob/main/CLI.md).
 
 ## How a prompt is assembled
 
@@ -110,6 +110,7 @@ Parents often ask on behalf of a child. Confirm who the allergy is for first.
 | Never | no | `## Never`, then a `-` list | `forbiddenActions` |
 | Warning signs | no | `## Warning signs`, then a `-` list | `warningSigns` |
 
+<a id="sop-rules"></a>
 The rules are strict, so every SOP reads the same and mistakes are caught:
 
 - Names are exact and case-sensitive: `**Goal:**`, `**When:**`, `## Steps`, `## Never`, `## Warning signs`. Anything else (`**Objective:**`, `## Notes`, `### Details`) is an error that lists the allowed names.
@@ -241,19 +242,7 @@ Set exactly one platform field. Elsewhere in sopc, refer to the agent by its id 
 
 ## Formatting and converting
 
-`sopc fmt` rewrites Markdown SOP files in one canonical style: sections in the standard order, numbered steps, `-` bullets, one blank line between blocks, markers as `` `tool: name` `` then `` `required` ``. Front matter is kept as written. Add `--yaml` to format YAML SOP files too: keys in a fixed order (`name`, the settings, `description`, `scope`, `guidance`, then the step lists), default settings left out, multi-line text as `|` blocks. `sopc fmt --check` writes nothing, lists the files that would change and exits 1 if there are any (for CI).
-
-`sopc convert --to md` (or `--to yaml`) rewrites SOPs in the other format: all of them, or the ids given (`sopc convert --to md allergen-check`). It writes the new file and deletes the old one. Comments at the top of a YAML file become front-matter comments, and back.
-
-**Nothing destructive happens without `-y` / `--yes`.** Some rewrites can't keep every comment: a YAML file's comments below the top block, or trailing comments on front-matter settings when converting to YAML. Both commands leave such a file as it is, list it with the exact comments it would lose, and exit 1. Edit it by hand, or rerun with `--yes` to remove those comments:
-
-```
-sops/procedures/takeout.yaml: not formatted: it would remove 2 comment(s); edit it by hand, or rerun with --yes to remove them
-  line 2: # the heading agents see
-  line 6: # ask first
-```
-
-Neither command changes any agent's prompt or `get_sop` payload; each checks this and refuses a file it can't rewrite exactly (`convert_failed`), e.g. a YAML `description` with line breaks, which a Markdown field can't keep. Converting may change SOP hashes in `build/lock.json` when only whitespace differs (e.g. the trailing newline of a `|` block).
+`sopc fmt` keeps SOP files in one canonical style, and `sopc convert` switches SOPs between Markdown and YAML; neither changes a compiled prompt. See [CLI.md](https://github.com/amanmibra/sopc/blob/main/CLI.md#sopc-fmt) for how they work and what `--yes` allows.
 
 ## Validation
 
