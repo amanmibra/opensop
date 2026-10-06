@@ -31,7 +31,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use text::{pretty_json, tidy};
-use workspace::{is_source, load, load_files, read_files, read_text, stem, Issue, Issues, CONFIG, LEGACY_CONFIG};
+use workspace::{
+    is_source, load, load_files, read_files, read_text, stem, write_atomic, Issue, Issues, CONFIG, LEGACY_CONFIG,
+};
 
 /// The format reference, printed by `sopc guide`.
 pub const FORMAT_MD: &str = include_str!("../FORMAT.md");
@@ -93,6 +95,10 @@ struct Cli {
     /// Fail if build/ is out of date instead of writing it
     #[arg(long)]
     check: bool,
+    /// Write into an --out folder that has other files but no lock.json (only the files sopc
+    /// builds are overwritten; nothing is removed)
+    #[arg(long)]
+    force: bool,
 }
 
 #[derive(Subcommand)]
@@ -323,18 +329,18 @@ impl std::error::Error for GitError {}
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    if cli.command.is_some() && (cli.out.is_some() || cli.check) {
+    if cli.command.is_some() && (cli.out.is_some() || cli.check || cli.force) {
         use clap::CommandFactory;
         Cli::command()
             .error(
                 clap::error::ErrorKind::ArgumentConflict,
-                "-o/--out and --check apply to compiling (`sopc`), not to a command; put command options after it",
+                "-o/--out, --check and --force apply to compiling (`sopc`), not to a command; put command options after it",
             )
             .exit();
     }
     let result = match cli.command {
         Some(command) => run(command, cli.dir),
-        None => compile(cli.dir, cli.out, cli.check),
+        None => compile(cli.dir, cli.out, cli.check, cli.force),
     };
     match result {
         Ok(code) => code,
@@ -377,7 +383,7 @@ fn build_at(root: &Path, git_ref: &str) -> anyhow::Result<Option<Build>> {
 
 /// `sopc`: compiles every agent's prompt into DIR/build (or `out`), or with `check`,
 /// fails if that folder is out of date.
-fn compile(dir: Option<PathBuf>, out: Option<PathBuf>, check: bool) -> anyhow::Result<ExitCode> {
+fn compile(dir: Option<PathBuf>, out: Option<PathBuf>, check: bool, force: bool) -> anyhow::Result<ExitCode> {
     let root = resolve_root(dir, Path::new("."))?;
     let out = tidy(&out.unwrap_or_else(|| root.join("build")));
     let build = build(&root)?;
@@ -394,7 +400,7 @@ fn compile(dir: Option<PathBuf>, out: Option<PathBuf>, check: bool) -> anyhow::R
         eprintln!("{}", plan.text(false));
         return Ok(ExitCode::FAILURE);
     }
-    let written = write_build(&build, &out)?;
+    let written = write_build(&build, &out, force)?;
     println!("wrote {written} files to {}", out.display());
     Ok(ExitCode::SUCCESS)
 }
@@ -561,7 +567,7 @@ fn fmt(root: &Path, check: bool, yaml: bool, yes: bool) -> anyhow::Result<ExitCo
         if check {
             println!("would reformat {path}");
         } else {
-            std::fs::write(root.join(path), new)?;
+            write_atomic(&root.join(path), new)?;
             println!("formatted {path}");
         }
     }
@@ -617,7 +623,7 @@ fn convert(root: &Path, to: Kind, ids: &[String], yes: bool) -> anyhow::Result<E
         return Err(Issues(errors).into());
     }
     for (old, new_path, new) in &out {
-        std::fs::write(root.join(new_path), new)?;
+        write_atomic(&root.join(new_path), new)?;
         std::fs::remove_file(root.join(old))?;
         println!("converted {old} -> {new_path}");
     }

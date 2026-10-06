@@ -126,6 +126,33 @@ fn bare_sopc_compiles_the_default_folder() {
 }
 
 #[test]
+fn compile_keeps_files_it_did_not_build() {
+    let (dir, _) = repo();
+    // An unrelated file in the output folder survives a rebuild.
+    run_ok(dir.path(), &[]);
+    std::fs::write(dir.path().join("sops/build/README.md"), "mine").unwrap();
+    run_ok(dir.path(), &[]);
+    assert_eq!(read(&dir.path().join("sops/build/README.md")), "mine");
+    // A non-empty folder without lock.json is refused, unless --force.
+    std::fs::create_dir(dir.path().join("docs")).unwrap();
+    std::fs::write(dir.path().join("docs/notes.prompt.md"), "mine").unwrap();
+    let out = sopc_in(dir.path(), &["-o", "docs"], &[]);
+    assert_eq!(out.code, 1);
+    assert!(out.stderr.contains("docs has files but no lock.json"), "{}", out.stderr);
+    assert!(!dir.path().join("docs/lock.json").exists());
+    assert_eq!(run_ok(dir.path(), &["-o", "docs", "--force"]).stdout, "wrote 6 files to docs\n");
+    assert_eq!(read(&dir.path().join("docs/notes.prompt.md")), "mine");
+    // --force is a compile flag.
+    assert_eq!(sopc_in(dir.path(), &["--force", "validate"], &[]).code, 2);
+}
+
+fn run_ok(dir: &Path, args: &[&str]) -> Output {
+    let out = sopc_in(dir, args, &[]);
+    assert_eq!(out.code, 0, "sopc {args:?}\nstdout: {}\nstderr: {}", out.stdout, out.stderr);
+    out
+}
+
+#[test]
 fn default_folder_is_sops_then_the_current_one() {
     let (dir, _) = repo();
     // sops/sopc.yaml wins even when ./sopc.yaml exists too.
@@ -312,6 +339,8 @@ fn convert_some_sops_and_unknown_ids() {
     let out = run(0, &["convert", "--dir", &root, "--to", "md", "reservations"]);
     assert_eq!(out.stdout, "converted procedures/reservations.yaml -> procedures/reservations.md\n");
     assert!(sop_files(&root).contains(&"allergen-check.yaml".to_string()));
+    let names = std::fs::read_dir(Path::new(&root).join("procedures")).unwrap();
+    assert!(names.map(|e| e.unwrap().file_name()).all(|n| !n.to_string_lossy().starts_with('.')), "no temp files");
     let out = run(1, &["convert", "--dir", &root, "--to", "md", "nope"]);
     assert!(out.stderr.contains("error [unknown_sop] 'nope' is not an SOP"), "{}", out.stderr);
     let out = run(0, &["convert", "--dir", &root, "--to", "md", "reservations"]);

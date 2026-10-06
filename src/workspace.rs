@@ -104,6 +104,15 @@ pub fn read_text(path: &Path) -> std::io::Result<String> {
     std::fs::read_to_string(path).map(universal_newlines)
 }
 
+/// Writes a file through a temp file in the same folder and a rename, so it's never half-written.
+pub fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    let tmp = path.with_file_name(format!(".{name}.tmp"));
+    std::fs::write(&tmp, text).and_then(|()| std::fs::rename(&tmp, path)).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
+}
+
 /// The source files of a folder, keyed by path relative to it.
 pub fn read_files(root: &Path) -> anyhow::Result<BTreeMap<String, String>> {
     let mut files = BTreeMap::new();

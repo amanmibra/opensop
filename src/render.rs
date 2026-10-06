@@ -257,28 +257,64 @@ pub fn render_agent(ws: &Workspace, agent: &Agent) -> Rendered {
     }
 }
 
-/// Writes <agent>.prompt.md, <agent>.tool.json and lock.json, removing stale prompt and tool
-/// files first. Returns the number of files written.
-pub fn write_build(build: &Build, out: &Path) -> anyhow::Result<usize> {
-    std::fs::create_dir_all(out)?;
-    for entry in std::fs::read_dir(out)? {
-        let path = entry?.path();
-        let name = path.file_name().unwrap_or_default().to_string_lossy();
-        if (name.ends_with(".prompt.md") || name.ends_with(".tool.json")) && !path.is_dir() {
-            std::fs::remove_file(&path)?;
-        }
-    }
-    let mut written = 0;
-    let mut write = |name: String, text: String| {
-        written += 1;
-        std::fs::write(out.join(name), text)
-    };
+/// Writes <agent>.prompt.md, <agent>.tool.json and lock.json into `out`. The files are written
+/// to a temp folder next to it and then renamed into place (lock.json last), so an error or
+/// Ctrl-C never leaves a half-written file or a missing prompt. Files the previous build listed in
+/// its lock.json that this one doesn't make are removed; nothing else in `out` is touched. A
+/// non-empty `out` without lock.json is refused unless `force`. Returns the number of files written.
+pub fn write_build(build: &Build, out: &Path, force: bool) -> anyhow::Result<usize> {
+    let previous = previous_build(out, force)?;
+    let mut files = vec![];
     for (id, r) in &build.agents {
-        write(format!("{id}.prompt.md"), r.prompt.clone())?;
+        files.push((format!("{id}.prompt.md"), r.prompt.clone()));
         if !r.tool_payload.is_empty() {
-            write(format!("{id}.tool.json"), pretty_json(&Json::Object(r.tool_payload.clone()), false) + "\n")?;
+            files.push((format!("{id}.tool.json"), pretty_json(&Json::Object(r.tool_payload.clone()), false) + "\n"));
         }
     }
-    write("lock.json".into(), pretty_json(&build.lock(), false) + "\n")?;
-    Ok(written)
+    let lock = pretty_json(&build.lock(), false) + "\n";
+    let abs = std::path::absolute(out)?;
+    let (Some(parent), Some(name)) = (abs.parent(), abs.file_name()) else {
+        anyhow::bail!("can't write the build to {}", out.display())
+    };
+    let tmp = parent.join(format!(".{}.tmp", name.to_string_lossy()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let staged = std::fs::create_dir_all(&tmp)
+        .and_then(|()| files.iter().try_for_each(|(name, text)| std::fs::write(tmp.join(name), text)))
+        .and_then(|()| std::fs::write(tmp.join("lock.json"), &lock))
+        .and_then(|()| std::fs::create_dir_all(out));
+    if let Err(e) = staged {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(anyhow::Error::new(e).context(format!("can't write the build to {}", out.display())));
+    }
+    for (name, _) in &files {
+        std::fs::rename(tmp.join(name), out.join(name))?;
+    }
+    for name in previous.iter().filter(|n| !files.iter().any(|(f, _)| f == *n)) {
+        match std::fs::remove_file(out.join(name)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+            _ => {}
+        }
+    }
+    std::fs::rename(tmp.join("lock.json"), out.join("lock.json"))?;
+    std::fs::remove_dir(&tmp)?;
+    Ok(files.len() + 1)
+}
+
+/// The prompt and tool files the build in `dir` made, from its lock.json. A folder that has files
+/// but no lock.json wasn't built by sopc: an error unless `force` (then nothing is removed).
+fn previous_build(dir: &Path, force: bool) -> anyhow::Result<Vec<String>> {
+    let lock = std::fs::read_to_string(dir.join("lock.json")).ok().and_then(|t| serde_json::from_str::<Json>(&t).ok());
+    let Some(lock) = lock else {
+        let empty = std::fs::read_dir(dir).map_or(true, |mut entries| entries.next().is_none());
+        if !empty && !force {
+            anyhow::bail!(
+                "{} has files but no lock.json, so sopc didn't build it; use an empty or new folder, \
+                 or pass --force to write into it (only the files sopc builds are overwritten)",
+                dir.display()
+            );
+        }
+        return Ok(vec![]);
+    };
+    let ids = lock["agents"].as_object().into_iter().flat_map(|a| a.keys());
+    Ok(ids.flat_map(|id| [format!("{id}.prompt.md"), format!("{id}.tool.json")]).collect())
 }

@@ -257,7 +257,7 @@ fn file_names(dir: &Path) -> Vec<String> {
 #[test]
 fn build_matches_golden_output() {
     let out = tempfile::tempdir().unwrap();
-    write_build(&build(&sops()), out.path()).unwrap();
+    write_build(&build(&sops()), out.path(), false).unwrap();
     let expected = fixture().join("expected");
     assert_eq!(file_names(out.path()), file_names(&expected));
     for name in file_names(&expected) {
@@ -268,7 +268,7 @@ fn build_matches_golden_output() {
 #[test]
 fn example_build_is_current() {
     let out = tempfile::tempdir().unwrap();
-    write_build(&build(&example()), out.path()).unwrap();
+    write_build(&build(&example()), out.path(), false).unwrap();
     let committed = example().join("build");
     assert_eq!(file_names(out.path()), file_names(&committed));
     for name in file_names(&committed) {
@@ -386,12 +386,30 @@ fn lock_lists_blocks_and_tools() {
 }
 
 #[test]
-fn write_build_removes_stale_files() {
+fn write_build_removes_only_what_the_last_build_made() {
     let out = tempfile::tempdir().unwrap();
-    std::fs::write(out.path().join("old-agent.prompt.md"), "stale").unwrap();
-    write_build(&build(&sops()), out.path()).unwrap();
-    assert!(!out.path().join("old-agent.prompt.md").exists());
-    assert!(read(&out.path().join("lock.json")).contains("\"version\": 1"));
+    let path = |name: &str| out.path().join(name);
+    std::fs::write(path("lock.json"), r#"{"version": 1, "agents": {"old-agent": {}}}"#).unwrap();
+    for name in ["old-agent.prompt.md", "old-agent.tool.json", "notes.prompt.md"] {
+        std::fs::write(path(name), "x").unwrap();
+    }
+    write_build(&build(&sops()), out.path(), false).unwrap();
+    assert!(!path("old-agent.prompt.md").exists() && !path("old-agent.tool.json").exists());
+    assert_eq!(read(&path("notes.prompt.md")), "x", "not in the old lock.json: kept");
+    assert!(read(&path("lock.json")).contains("\"version\": 1"));
+    let parent = out.path().parent().unwrap();
+    let tmp = format!(".{}.tmp", out.path().file_name().unwrap().to_string_lossy());
+    assert!(!parent.join(tmp).exists(), "the temp folder is removed");
+
+    // A folder with files but no lock.json is refused, unless forced; its files are kept.
+    let other = tempfile::tempdir().unwrap();
+    std::fs::write(other.path().join("notes.md"), "mine").unwrap();
+    let err = write_build(&build(&sops()), other.path(), false).unwrap_err().to_string();
+    assert!(err.contains("has files but no lock.json"), "{err}");
+    assert_eq!(file_names(other.path()), ["notes.md"]);
+    write_build(&build(&sops()), other.path(), true).unwrap();
+    assert!(other.path().join("lock.json").exists());
+    assert_eq!(read(&other.path().join("notes.md")), "mine");
 }
 
 #[test]
@@ -751,7 +769,7 @@ fn markdown_sop_renders_the_same_prompts_and_tool_json() {
     std::fs::remove_file(r.path("procedures/allergen-check.yaml")).unwrap();
     std::fs::write(r.path("procedures/allergen-check.md"), md_fixture()).unwrap();
     let out = tempfile::tempdir().unwrap();
-    write_build(&build(r.root()), out.path()).unwrap();
+    write_build(&build(r.root()), out.path(), false).unwrap();
     for (name, text) in read_dir(&fixture().join("expected"), "") {
         if name != "lock.json" {
             assert_eq!(read(&out.path().join(&name)), text, "{name}");
