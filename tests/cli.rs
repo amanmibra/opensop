@@ -269,7 +269,7 @@ fn plan_against_a_git_ref() {
     let out = run(0, &["plan", "--dir", &root, "--against", "main", "--summary"]);
     assert!(out.stdout.contains("SOP `allergen-check` edited → 3 agents"), "{}", out.stdout);
     let out = run(1, &["plan", "--dir", &root, "--against", "nope"]);
-    let want = "error: unknown git ref `nope`; check the name, or fetch it (`git fetch origin nope`)\n";
+    let want = "sopc: error: unknown git ref `nope`; check the name, or fetch it (`git fetch origin nope`)\n";
     assert_eq!(out.stderr, want);
     let out = run(1, &["affected", "--dir", &root, "--against", "origin/nope"]);
     assert!(out
@@ -279,7 +279,7 @@ fn plan_against_a_git_ref() {
     let (_dir, root) = repo();
     for cmd in ["plan", "affected"] {
         let out = run(1, &[cmd, "--dir", &root, "--against", "main"]);
-        assert_eq!(out.stderr, "error: not a git repository; --against needs git\n", "{cmd}");
+        assert_eq!(out.stderr, "sopc: error: not a git repository; --against needs git\n", "{cmd}");
     }
 }
 

@@ -315,18 +315,6 @@ impl CodingAgent {
     }
 }
 
-/// A failed git command; printed after "error: ".
-#[derive(Debug)]
-struct GitError(String);
-
-impl fmt::Display for GitError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for GitError {}
-
 fn main() -> ExitCode {
     let cli = Cli::parse();
     if cli.command.is_some() && (cli.out.is_some() || cli.check || cli.force) {
@@ -350,8 +338,6 @@ fn main() -> ExitCode {
                 // Issue paths are relative to the sopc folder; print them from the current one.
                 let root = resolve_root(dir, Path::new(".")).unwrap_or_default();
                 eprintln!("{}", Issues(issues.0.iter().map(|i| i.seen_from_cwd(&root)).collect()));
-            } else if let Some(git) = err.downcast_ref::<GitError>() {
-                eprintln!("error: {git}");
             } else {
                 eprintln!("sopc: error: {err:#}");
             }
@@ -732,10 +718,10 @@ fn install_skills(agents: &[CodingAgent], dir: Option<PathBuf>) -> anyhow::Resul
 
 fn git(cwd: &Path, args: &[&str]) -> anyhow::Result<String> {
     let output = std::process::Command::new("git").args(args).current_dir(cwd).output();
-    let output = output.map_err(|e| GitError(format!("can't run git ({e}); --against needs git")))?;
+    let output = output.map_err(|e| anyhow::anyhow!("can't run git ({e}); --against needs git"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(GitError(format!("git {}: {}", args.join(" "), stderr.trim())).into());
+        bail!("git {}: {}", args.join(" "), stderr.trim());
     }
     Ok(workspace::universal_newlines(String::from_utf8_lossy(&output.stdout).into_owned()))
 }
@@ -759,13 +745,13 @@ fn describe_ref(root: &Path, git_ref: &str) -> anyhow::Result<String> {
     match git(root, &["rev-parse", "--short", &format!("{git_ref}^{{commit}}")]) {
         Ok(sha) => Ok(format!("{git_ref} ({})", sha.trim())),
         Err(e) if e.to_string().contains("not a git repository") => {
-            Err(GitError("not a git repository; --against needs git".into()).into())
+            Err(anyhow::anyhow!("not a git repository; --against needs git"))
         }
         Err(e) if e.to_string().starts_with("can't run git") => Err(e),
         Err(_) => {
             let branch = git_ref.strip_prefix("origin/").unwrap_or(git_ref);
             let msg = format!("unknown git ref `{git_ref}`; check the name, or fetch it (`git fetch origin {branch}`)");
-            Err(GitError(msg).into())
+            Err(anyhow::anyhow!(msg))
         }
     }
 }
