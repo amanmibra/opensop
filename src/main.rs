@@ -1,5 +1,15 @@
 //! The sopc command line.
 
+/// `print!` and `println!` that end the program quietly when stdout is closed (`sopc guide | head`)
+/// instead of panicking. They shadow the std macros for the whole crate.
+macro_rules! print {
+    ($($arg:tt)*) => { $crate::write_stdout(format_args!($($arg)*)) };
+}
+macro_rules! println {
+    () => { print!("\n") };
+    ($($arg:tt)*) => { print!("{}\n", format_args!($($arg)*)) };
+}
+
 mod analyze;
 mod model;
 mod plan;
@@ -338,6 +348,17 @@ fn main() -> ExitCode {
             }
             ExitCode::FAILURE
         }
+    }
+}
+
+/// Writes to stdout; a closed pipe ends the program with success (the reader has what it wanted).
+fn write_stdout(args: fmt::Arguments) {
+    if let Err(e) = std::io::stdout().lock().write_fmt(args) {
+        if e.kind() != std::io::ErrorKind::BrokenPipe {
+            eprintln!("sopc: error: can't write output: {e}");
+            std::process::exit(1);
+        }
+        std::process::exit(0);
     }
 }
 

@@ -542,6 +542,24 @@ fn help_has_examples_and_docs_links() {
 }
 
 #[test]
+fn a_closed_pipe_is_a_quiet_exit() {
+    // Like `sopc guide | head -1`: the reader is gone before sopc writes.
+    for args in [&["guide"][..], &["agents", "--dir", "tests/fixtures/restaurants/sops"]] {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_sopc"))
+            .args(args)
+            .current_dir(repo_root())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        drop(child.stdout.take());
+        let out = child.wait_with_output().unwrap();
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!((out.status.code(), stderr.as_ref()), (Some(0), ""), "{args:?}");
+    }
+}
+
+#[test]
 fn rewrites_that_would_remove_comments_need_yes() {
     let (_dir, root) = repo();
     let file = Path::new(&root).join("procedures/reservations.yaml");
