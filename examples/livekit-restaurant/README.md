@@ -28,7 +28,7 @@ livekit-restaurant/
       pizza-context.md               only the pizza place lists it
       closing.md                     every agent lists it last
     procedures/                    SOPs, in Markdown (recommended) or YAML
-      allergen-check.md              every agent; locked; uses the lookup_allergens tool
+      allergen-check.md              every agent; uses the lookup_allergens tool
       delivery-handling.yaml         the same format in YAML; Sakura doesn't deliver
       reservations.md                Sakura and Luigi's only
     agents/                        one file per restaurant: its own text and the blocks it uses
@@ -178,10 +178,14 @@ Say the team wants every agent to use the caller's name.
 
 5. **Merge and deploy each affected agent.** `lock.json` shows which agents changed; here it's all three. Each restaurant is its own LiveKit Cloud agent with `AGENT_NAME` set as a secret, so this means running `lk agent deploy` for Tony's, Luigi's and Sakura. Each restaurant's next calls run with the new prompt.
 
-If someone removes the locked allergen check from an agent, `sopc validate` fails:
+If an agent's own text contradicts a shared block, `sopc lint --strict` fails. Say `context` in `tonys-pizza.yaml` gains "Never upsell more than twice per call.":
 
 ```
-sops/agents/sakura-sushi.yaml: error [locked] 'allergen-check' is locked, so every agent must include it; add it to blocks (directly or through a group)
+1 finding(s). These are advisory; decide which text is right.
+
+[numeric_conflict] Same sentence with different numbers (agents: tonys-pizza)
+    agent `tonys-pizza`: Never upsell more than twice per call.
+    instruction `brand-voice`: Never upsell more than once per call.
 ```
 
 ## Run it
@@ -202,7 +206,7 @@ AGENT_NAME=sakura-sushi npm run dev
 | A change every restaurant needs | Edit every agent's prompt and hope none are missed | Edit one file; `sopc plan` lists every agent it reaches |
 | A change some restaurants need | Remember which ones | Each agent's `blocks` list says which blocks it uses |
 | Reviewing a change | Read long prompt strings | Read a one-line source change plus the exact prompt diffs |
-| Rules nobody may drop | Rely on people | `locked: true`; validation fails otherwise |
+| An agent contradicting a shared rule | Rely on reviewers | `sopc lint --strict` fails on the same sentence with a different number, or "always" vs "never" |
 | Getting it live | Deploy each changed agent | Deploy each changed agent (no change) |
 
 Getting it live stays the same because the prompt still ships with the code, which is how a code-deployed LiveKit agent works with or without sopc. Later, a prompt server such as sopserve removes the redeploy: agents fetch their prompt when a call starts, so a merge goes live right away. `loadInstructions` will fall back to these same files if the server can't be reached, so moving to the server won't change this code.

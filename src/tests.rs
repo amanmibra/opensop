@@ -91,28 +91,27 @@ fn fixture_is_valid() {
 }
 
 #[test]
-fn locked_block_must_be_in_every_agent() {
+fn locked_is_no_longer_a_field_and_says_to_migrate() {
     let r = Repo::new();
-    r.edit("agents/sakura-sushi.yaml", "  - brand-voice\n", "");
-    let issues = render_workspace(&ws(r.root())).err().unwrap().0;
-    assert_eq!(codes(&issues), ["locked"]);
-    assert_eq!(issues[0].path, "agents/sakura-sushi.yaml");
-    assert!(
-        issues[0].message.contains("'brand-voice' is locked, so every agent must include it"),
-        "{}",
-        issues[0].message
-    );
-    // Through a group counts.
-    r.append("sopc.yaml", "\ngroups:\n  voice:\n    - brand-voice\n");
-    r.edit("agents/sakura-sushi.yaml", "  - restaurant-host\n", "  - restaurant-host\n  - voice\n");
-    assert!(build(r.root()).agents["sakura-sushi"].prompt.contains("Speak warmly"));
-    // A locked SOP too.
+    std::fs::write(
+        r.path("instructions/brand-voice.md"),
+        format!("---\nlocked: true\n---\n{}", read(&sops().join("instructions/brand-voice.md"))),
+    )
+    .unwrap();
     r.edit("procedures/reservations.yaml", "name: Reservations\n", "name: Reservations\nlocked: true\n");
-    assert_eq!(render_codes(r.root()), ["locked"]);
+    let issues = load_issues(r.root());
+    assert_eq!(codes(&issues), ["removed_field", "removed_field"]);
+    assert_eq!(issues[0].path, "instructions/brand-voice.md");
+    assert_eq!(
+        issues[0].message,
+        "`locked` is no longer part of the format; run `sopc migrate` to remove it from this folder (or delete the line)"
+    );
+    assert_eq!(issues[1].path, "procedures/reservations.yaml");
+    // A Markdown SOP's front matter: see markdown_formatting_checks_report_code_and_line.
 }
 
 #[test]
-fn unlocked_block_can_be_left_out() {
+fn a_block_can_be_left_out() {
     let r = Repo::new();
     r.edit("agents/sakura-sushi.yaml", "  - closing\n", "");
     assert!(!build(r.root()).agents["sakura-sushi"].blocks.iter().any(|b| b.id() == "closing"));
@@ -564,8 +563,8 @@ fn write_build_removes_only_what_the_last_build_made() {
 
 #[test]
 fn canonical_json_follows_field_order_and_keeps_non_ascii() {
-    let instruction = Instruction { id: "b".into(), locked: false, text: "Olá \"x\"\n".into() };
-    assert_eq!(instruction.canonical_json(), r#"{"id":"b","locked":false,"text":"Olá \"x\"\n"}"#);
+    let instruction = Instruction { id: "b".into(), text: "Olá \"x\"\n".into() };
+    assert_eq!(instruction.canonical_json(), r#"{"id":"b","text":"Olá \"x\"\n"}"#);
     let keys = |json: String| -> Vec<String> {
         serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&json).unwrap().keys().cloned().collect()
     };
@@ -960,8 +959,9 @@ fn markdown_fields_guidance_and_any_section_order() {
 #[test]
 fn markdown_formatting_checks_report_code_and_line() {
     for (text, want) in [
-        ("---\nname: X\nlocked: true\n---\n# Name\n## Steps\n1. a\n", ("md_settings_field", 2)),
-        ("---\nlocked: true\nprocedureSteps: [a]\n---\n# Name\n## Steps\n1. a\n", ("md_settings_field", 3)),
+        ("---\nname: X\ndelivery: auto\n---\n# Name\n## Steps\n1. a\n", ("md_settings_field", 2)),
+        ("---\ndelivery: auto\nprocedureSteps: [a]\n---\n# Name\n## Steps\n1. a\n", ("md_settings_field", 3)),
+        ("---\nlocked: true\n---\n# Name\n## Steps\n1. a\n", ("removed_field", 0)),
         ("---\nagents: \"*\"\n---\n# Name\n## Steps\n1. a\n", ("old_format", 0)),
         ("Intro\n# Name\n## Steps\n1. a\n", ("md_text_before_name", 1)),
         ("# Name\n## Steps\n1. a\n# Other\n", ("md_extra_name", 4)),
@@ -988,7 +988,7 @@ fn markdown_formatting_checks_report_code_and_line() {
     assert_eq!(md_problems("\n\n"), [("md_missing_name", 1)]);
     assert_eq!(md_problems("**Goal:** g\n## Steps\n1. a\n"), [("md_text_before_name", 1), ("md_missing_name", 1)]);
     assert_eq!(
-        md_problems("---\nlocked: true\n---\n## Steps\n1. a\n"),
+        md_problems("---\ndelivery: auto\n---\n## Steps\n1. a\n"),
         [("md_text_before_name", 4), ("md_missing_name", 4)]
     );
     assert!(md_problems(MD_OK).is_empty());
@@ -1061,10 +1061,10 @@ fn fmt_is_canonical_and_idempotent() {
 
 #[test]
 fn fmt_keeps_yaml_values_exactly() {
-    let text = "# header comment\n\nid: x\ndelivery: prompt   # dropped\nname: 'X'\nlocked: yes\nguidance: |+\n  keep\n\n   indented\n\nprocedureSteps:\n- text: plain object\n- \"Say: hi\"\n- |-\n  two\n  lines\n- text: t\n  tool: ''\nscope: >\n  folded\n  text\n";
+    let text = "# header comment\n\nid: x\ndelivery: prompt   # dropped\nname: 'X'\nguidance: |+\n  keep\n\n   indented\n\nprocedureSteps:\n- text: plain object\n- \"Say: hi\"\n- |-\n  two\n  lines\n- text: t\n  tool: ''\nscope: >\n  folded\n  text\n";
     let (sop, _) = parse_sop_file("procedures/x.yaml", text).unwrap();
     let (_, out) = rewrite("procedures/x.yaml", text, Kind::Yaml).unwrap();
-    assert!(out.starts_with("# header comment\n\nname: X\nlocked: true\n"), "{out}");
+    assert!(out.starts_with("# header comment\n\nname: X\nscope: |\n"), "{out}");
     let (back, _) = parse_sop_file("procedures/x.yaml", &out).unwrap();
     assert_eq!(back.canonical_json(), sop.canonical_json());
     assert_eq!(rewrite("procedures/x.yaml", &out, Kind::Yaml).unwrap().1, out);
@@ -1117,7 +1117,7 @@ fn migrated(name: &str) -> migrate::Migration {
 fn migrate_reproduces_the_fixture_exactly() {
     let m = migrated("restaurants");
     assert_eq!(m.files, read_files(&sops()).unwrap());
-    assert!(m.dropped_locks.is_empty());
+    assert!(!m.removed_fields_only);
     assert_eq!(migrate::verify(&m.files, &m.expected).unwrap(), 3);
     assert!(!migrate::is_old(&m.files));
 }
@@ -1184,30 +1184,67 @@ variables:
 }
 
 #[test]
-fn migrate_drops_locks_that_not_every_agent_uses() {
+fn migrate_drops_every_lock() {
     let m = migrated("livekit-restaurant");
-    let dropped: Vec<(&str, Vec<&str>)> =
-        m.dropped_locks.iter().map(|(id, a)| (id.as_str(), a.iter().map(String::as_str).collect())).collect();
-    assert_eq!(
-        dropped,
-        [
-            ("brand-voice-es", vec!["luigis-trattoria", "sakura-sushi", "tonys-pizza"]),
-            ("brand-voice", vec!["la-casita"]),
-        ]
-    );
     // la-casita lists the Spanish voice instead of the English one.
     let casita = &m.files["agents/la-casita.yaml"];
     assert!(casita.contains("  - brand-voice-es\n") && !casita.contains("  - brand-voice\n"), "{casita}");
-    assert!(!m.files["instructions/brand-voice.md"].contains("locked"));
+    assert!(!m.files.values().any(|text| text.contains("locked:")));
     let plan = migrate::plan_text(&m, "sops", &|p| p.to_string());
-    assert!(plan.contains("warning: `brand-voice` was locked, but not every agent uses it (not: la-casita)"), "{plan}");
+    assert!(!plan.contains("warning"), "{plan}");
     assert!(plan.contains("  bases/brand-voice.md → instructions/brand-voice.md: removed agents, exclude, locked\n"));
     assert!(plan.contains(
         "  agents/sakura-sushi.yaml: instructions → context; removed inherits, exclude; blocks: restaurant-host, brand-voice, allergen-check, reservations, closing\n"
     ));
-    // A lock every agent keeps stays.
+    // Even a lock every agent kept.
     let m = migrated("restaurants");
-    assert!(m.files["instructions/brand-voice.md"].contains("locked: true"));
+    assert_eq!(m.files["instructions/brand-voice.md"], read(&sops().join("instructions/brand-voice.md")));
+}
+
+#[test]
+fn migrate_removes_locked_from_a_current_folder() {
+    let mut files = read_files(&sops()).unwrap();
+    let voice = files["instructions/brand-voice.md"].clone();
+    files.insert(
+        "instructions/brand-voice.md".into(),
+        format!("---\n# Every agent needs this.\nlocked: true\nid: brand-voice\n---\n{voice}"),
+    );
+    let sop = files["procedures/reservations.yaml"]
+        .replace("name: Reservations\n", "name: Reservations\nlocked: yes # all of them\n");
+    files.insert("procedures/reservations.yaml".into(), sop);
+    assert!(!migrate::is_old(&files) && migrate::needs_migrating(&files));
+    let m = migrate::migrate(&files).unwrap();
+    assert!(m.removed_fields_only);
+    assert_eq!(m.files["instructions/brand-voice.md"], format!("---\nid: brand-voice\n---\n{voice}"));
+    assert_eq!(
+        m.files,
+        read_files(&sops())
+            .unwrap()
+            .into_iter()
+            .map(|(p, t)| {
+                let t = if p == "instructions/brand-voice.md" { m.files[&p].clone() } else { t };
+                (p, t)
+            })
+            .collect()
+    );
+    assert_eq!(migrate::verify(&m.files, &m.expected).unwrap(), 3);
+    assert!(!migrate::needs_migrating(&m.files));
+    let plan = migrate::plan_text(&m, "sops", &|p| p.to_string());
+    assert_eq!(
+        plan,
+        "Removing fields the format no longer has from sops (2 file(s) change):
+  instructions/brand-voice.md: removed locked
+  procedures/reservations.yaml: removed locked
+Comments that go with removed fields:
+  instructions/brand-voice.md
+    line 2: # Every agent needs this.
+  procedures/reservations.yaml
+    line 2: # all of them
+Checked: all 3 agent prompt(s) stay the same.
+"
+    );
+    // A ref with locks builds as if migrated (for `plan --against`).
+    assert_eq!(migrate::convert(files).unwrap(), m.files);
 }
 
 #[test]

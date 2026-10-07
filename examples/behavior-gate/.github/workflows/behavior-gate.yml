@@ -49,6 +49,11 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/amanmibra/sopc/main/install.sh | SOPC_REF="$SOPC_VERSION" sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      # Optional: fail first on duplicated or conflicting instructions (needs a sopc release
+      # with `lint --strict`, after v0.0.9).
+      # - name: Lint
+      #   run: sopc lint ${SOPC_ROOT:+--dir "$SOPC_ROOT"} --strict
+
       - name: Work out which agents to test
         id: agents
         env:

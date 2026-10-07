@@ -178,6 +178,23 @@ pub fn old_format(path: &str, what: &str) -> Issue {
     Issue::error("old_format", path, msg)
 }
 
+/// The error for a field the format no longer has (see [`model::REMOVED_FIELDS`]).
+pub fn removed_field(path: &str, field: &str) -> Issue {
+    let msg = format!(
+        "`{field}` is no longer part of the format; run `sopc migrate` to remove it from this folder (or delete the line)"
+    );
+    Issue::error("removed_field", path, msg)
+}
+
+/// Reports and drops fields the format no longer has, so they aren't also "unknown".
+pub fn removed_fields(map: &mut Mapping, path: &str, issues: &mut Vec<Issue>) {
+    for field in model::REMOVED_FIELDS {
+        if map.remove(*field).is_some() {
+            issues.push(removed_field(path, field));
+        }
+    }
+}
+
 /// Reports fields of the old format in a file's mapping (or a Markdown file's front matter).
 fn old_fields(map: &Mapping, fields: &[&str], path: &str, issues: &mut Vec<Issue>) {
     for field in fields.iter().filter(|f| map.contains_key(**f)) {
@@ -210,6 +227,7 @@ pub fn load_files(files: &BTreeMap<String, String>) -> Result<Workspace, Issues>
         let (meta, body) = split_front_matter(text);
         let Some(mut map) = load_yaml(meta, path, &mut issues) else { continue };
         old_fields(&map, model::OLD_INSTRUCTION_FIELDS, path, &mut issues);
+        removed_fields(&mut map, path, &mut issues);
         set_id(&mut map, path, &mut issues);
         map.insert("text".into(), body.trim().into());
         match model::parse_instruction(&map) {
@@ -264,6 +282,7 @@ pub fn parse_sop_file(path: &str, text: &str) -> Result<(Sop, Vec<Issue>), Vec<I
     let Some(mut map) = map else { return Err(issues) };
     if !markdown {
         old_fields(&map, model::OLD_SOP_FIELDS, path, &mut issues);
+        removed_fields(&mut map, path, &mut issues);
     }
     set_id(&mut map, path, &mut issues);
     let no_steps = match map.get("procedureSteps") {
@@ -406,7 +425,7 @@ pub fn export(ws: &Workspace) -> serde_json::Value {
 
 // --- whole-workspace checks ----------------------------------------------------------------------
 
-/// Ids, groups, locks and variables.
+/// Ids, groups and variables.
 pub fn validate(ws: &Workspace) -> Vec<Issue> {
     let mut issues = ws.warnings.clone();
 
@@ -458,15 +477,6 @@ pub fn validate(ws: &Workspace) -> Vec<Issue> {
         let before = issues.len();
         let ids = expand(ws, &agent.blocks, &path, &mut issues);
         used.extend(ids.iter().cloned());
-        let locked = ws.instructions.iter().filter(|i| i.locked).map(|i| &i.id);
-        for id in locked.chain(ws.sops.iter().filter(|s| s.locked).map(|s| &s.id)) {
-            if !ids.contains(id) {
-                let msg = format!(
-                    "'{id}' is locked, so every agent must include it; add it to blocks (directly or through a group)"
-                );
-                issues.push(Issue::error("locked", &path, msg));
-            }
-        }
         if issues.len() > before {
             continue;
         }

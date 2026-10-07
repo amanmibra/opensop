@@ -41,7 +41,6 @@ Rules that keep the list unambiguous:
 - Every id in `blocks` (and in a group) must be an instruction, an SOP or a group: anything else is `unknown_block`.
 - A block may appear only once in an agent's expanded list, whether listed directly or through a group: twice is `duplicate_block`. List each block once, or take it out of the group.
 - A group can't contain itself, directly or through other groups (`group_cycle`).
-- **Locked blocks** (`locked: true`) must be in every agent's expanded list, directly or through a group, or the build fails (`locked`). Locked blocks also stay off-limits to future automated suggestions: tools that propose prompt changes must leave them alone.
 
 ## sopc.yaml
 
@@ -71,16 +70,12 @@ Markdown text, optionally preceded by YAML front matter between `---` lines. The
 
 ```markdown
 ---
-locked: true           # optional: every agent must include it
+# Optional. Notes for people editing this file; they never reach a prompt.
 ---
 Speak warmly and briefly. Ask one question at a time.
 ```
 
-| Field | Type | Default | Meaning |
-|---|---|---|---|
-| `locked` | bool | `false` | Every agent must include it (directly or through a group), or the build fails. |
-
-A file with no front matter is valid: it's plain text. Comments in the front matter (`# ...`) never reach a prompt.
+Instructions have no settings: the front matter, if any, holds comments (and `id`, which must match the file name). A file with no front matter is valid: it's plain text.
 
 ## procedures/\<id\>.md
 
@@ -89,7 +84,6 @@ An SOP is a procedure: a goal, when it applies, steps, things never to do, and w
 ```markdown
 ---
 delivery: prompt
-locked: true
 ---
 # Allergen check
 
@@ -112,7 +106,7 @@ Parents often ask on behalf of a child. Confirm who the allergy is for first.
 
 | Part | Required | Written as | YAML field |
 |---|---|---|---|
-| Settings | no | Front matter between `---` lines, settings only: `locked`, `delivery` (and `id`, which must match the file name). YAML comments here never reach a prompt. | same names |
+| Settings | no | Front matter between `---` lines, settings only: `delivery` (and `id`, which must match the file name). YAML comments here never reach a prompt. | same names |
 | Name | **yes** | Exactly one `# ` heading, the first thing after the front matter. | `name` |
 | Goal | no, but warned about | `**Goal:** text` | `description` |
 | When | no | `**When:** text` | `scope` |
@@ -158,7 +152,6 @@ warningSigns:
 |---|---|---|---|
 | `name` | string | required | Heading in the prompt. |
 | `procedureSteps` | list of steps | required | Ordered steps; at least one. |
-| `locked` | bool | `false` | Every agent must include it (directly or through a group), or the build fails. |
 | `delivery` | `prompt` \| `auto` \| `tool` | `prompt` | See below. |
 | `description` | string | `""` | **The goal**: the outcome that means the SOP succeeded. Write it. |
 | `scope` | string | `""` | When the SOP applies. |
@@ -176,7 +169,7 @@ forbiddenActions:
 
 For long text, a `|` block avoids quoting entirely.
 
-**YAML version.** Files are read as YAML 1.2. Unquoted `yes`, `no`, `on`, `off`, times like `1:30` and dates are plain text. Only bare numbers (`- 10`) and `true`/`false` are read as something other than text, so quote a step that is just a number or a boolean. Duplicate keys in one mapping are an error. Boolean fields (`locked`, `required`) take `true` or `false`; `yes`/`no` are accepted there too.
+**YAML version.** Files are read as YAML 1.2. Unquoted `yes`, `no`, `on`, `off`, times like `1:30` and dates are plain text. Only bare numbers (`- 10`) and `true`/`false` are read as something other than text, so quote a step that is just a number or a boolean. Duplicate keys in one mapping are an error. The boolean field `required` takes `true` or `false`; `yes`/`no` are accepted there too.
 
 **Steps.** Each entry in `procedureSteps`, `forbiddenActions` and `warningSigns` is either a plain string or an object:
 
@@ -236,13 +229,13 @@ Set exactly one platform field. Write `context` right after it, then `blocks`, s
 
 | You want | Do this |
 |---|---|
-| Text every agent gets | An instruction every agent lists. Add `locked: true` so the build fails if one leaves it out. |
+| Text every agent gets | An instruction every agent lists, or a group every agent lists. |
 | The same set of blocks in many agents | A group in `sopc.yaml`; each of those agents lists the group in `blocks`. |
 | A family of agents with shared context | An instruction (e.g. `pizza-context`) that those agents list after the shared ones; or a group holding both. |
 | Text one agent gets | That agent's `context`. |
 | The same sentence with a different value per agent | A placeholder in the shared block, with each agent's value in `variables`. |
 | One agent skips a shared SOP | Leave it out of that agent's `blocks` (or list that group's other blocks instead of the group). |
-| One agent needs a different version of a block (e.g. a Spanish brand voice) | A second instruction; that agent lists it instead of the first. A locked block must be in every agent, so neither version can be locked. |
+| One agent needs a different version of a block (e.g. a Spanish brand voice) | A second instruction; that agent lists it instead of the first. |
 | Something said at the end of every call | An instruction each agent lists last. |
 | A procedure only some agents follow | An SOP that only those agents list. |
 
@@ -272,7 +265,7 @@ Set exactly one platform field. Write `context` right after it, then `blocks`, s
 | `invalid_field` | error | Unknown field, wrong type, missing `name`, or not exactly one platform. |
 | `missing_steps` | error | An SOP has no steps: YAML `procedureSteps` missing or empty, or Markdown without `## Steps` or with no items under it. |
 | `duplicate_file` | error | An SOP exists as both `<id>.md` and `<id>.yaml`. Keep one. |
-| `md_settings_field` | error | A Markdown SOP's front matter sets something other than `id`, `locked`, `delivery` (e.g. `name`); write it in the body. |
+| `md_settings_field` | error | A Markdown SOP's front matter sets something other than `id`, `delivery` (e.g. `name`); write it in the body. |
 | `md_missing_name` | error | No `# <name>` heading. |
 | `md_extra_name` | error | A second `# ` heading. |
 | `md_text_before_name` | error | Text before the `# <name>` heading. |
@@ -291,9 +284,9 @@ Set exactly one platform field. Write `context` right after it, then `blocks`, s
 | `unknown_block` | error | An agent's `blocks` or a group lists an id that isn't an instruction, SOP or group. |
 | `duplicate_block` | error | A block appears twice in an agent's expanded list (listed twice, or both directly and through a group). |
 | `group_cycle` | error | Groups contain each other in a loop. |
-| `locked` | error | An agent doesn't include a locked block. |
 | `unset_variable` | error | A placeholder has no value for some agent. |
 | `old_format` | error | A field or folder from the format of sopc v0.0.8 and earlier: `bases/`, `inherits`, `exclude`, `position`, `agents` on a block, `instructions` on an agent, `sop_order`. Run `sopc migrate`. |
+| `removed_field` | error | `locked`, which sopc v0.0.9 and earlier read, on an instruction or SOP. It no longer exists; run `sopc migrate` to remove it, or delete the line. |
 | `migrate_failed` | error | `sopc migrate` can't convert a file exactly (or the folder is partly migrated); nothing is written. |
 | `missing_goal` | warning | An SOP has no goal (`**Goal:**` or `description`). |
 | `unused_block` | warning | No agent uses an instruction or SOP, directly or through a group. |

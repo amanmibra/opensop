@@ -11,11 +11,10 @@ use serde_yaml_ng::{Mapping, Value};
 pub const PLATFORMS: [&str; 4] = ["livekit", "vapi", "elevenlabs", "retell"];
 pub const DELIVERIES: [&str; 3] = ["prompt", "auto", "tool"];
 
-pub const INSTRUCTION_FIELDS: &[&str] = &["id", "locked", "text"];
+pub const INSTRUCTION_FIELDS: &[&str] = &["id", "text"];
 pub const SOP_FIELDS: &[&str] = &[
     "id",
     "name",
-    "locked",
     "delivery",
     "description",
     "scope",
@@ -37,6 +36,9 @@ pub const OLD_INSTRUCTION_FIELDS: &[&str] = &["agents", "exclude", "inherits", "
 pub const OLD_SOP_FIELDS: &[&str] = &["agents", "exclude"];
 pub const OLD_AGENT_FIELDS: &[&str] = &["inherits", "exclude", "instructions"];
 pub const OLD_CONFIG_FIELDS: &[&str] = &["sop_order"];
+/// Fields of instructions and SOPs that sopc v0.0.9 and earlier read and the format no longer
+/// has. `sopc migrate` removes them; nothing else reads them.
+pub const REMOVED_FIELDS: &[&str] = &["locked"];
 
 /// A step, forbidden action or warning sign.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -58,7 +60,6 @@ impl Step {
 #[derive(Clone, Debug, Default)]
 pub struct Instruction {
     pub id: String,
-    pub locked: bool,
     pub text: String,
 }
 
@@ -68,7 +69,6 @@ pub struct Sop {
     /// The file it was read from, e.g. "procedures/allergen-check.md" (not part of its JSON).
     pub file: String,
     pub name: String,
-    pub locked: bool,
     pub delivery: String,
     pub description: String,
     pub scope: String,
@@ -194,14 +194,14 @@ fn steps_json(steps: &[Step]) -> Json {
 
 impl Instruction {
     pub fn canonical_json(&self) -> String {
-        json!({"id": self.id, "locked": self.locked, "text": self.text}).to_string()
+        json!({"id": self.id, "text": self.text}).to_string()
     }
 }
 
 impl Sop {
     pub fn canonical_json(&self) -> String {
         json!({
-            "id": self.id, "name": self.name, "locked": self.locked, "delivery": self.delivery,
+            "id": self.id, "name": self.name, "delivery": self.delivery,
             "description": self.description, "scope": self.scope, "guidance": self.guidance,
             "procedureSteps": steps_json(&self.procedure_steps),
             "forbiddenActions": steps_json(&self.forbidden_actions),
@@ -436,7 +436,6 @@ pub fn parse_instruction(map: &Mapping) -> Result<Instruction, Vec<String>> {
     let f = Fields::new(map, "", INSTRUCTION_FIELDS, &[], &mut e);
     let instruction = Instruction {
         id: f.string("id", &mut e).unwrap_or_default(),
-        locked: f.boolean("locked", &mut e),
         text: f.string("text", &mut e).unwrap_or_default(),
     };
     finish(instruction, e)
@@ -451,7 +450,6 @@ pub fn parse_sop(map: &Mapping) -> Result<Sop, Vec<String>> {
     let sop = Sop {
         id: text("id", &mut e),
         name: text("name", &mut e),
-        locked: f.boolean("locked", &mut e),
         delivery: f.choice("delivery", &DELIVERIES, &mut e),
         description: text("description", &mut e),
         scope: text("scope", &mut e),

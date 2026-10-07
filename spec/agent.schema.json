@@ -66,7 +66,7 @@
       "type": "string"
     },
     "blocks": {
-      "description": "Instruction, SOP and group ids, in prompt order. A group expands in place. Each block may appear once, and every locked block must be included.",
+      "description": "Instruction, SOP and group ids, in prompt order. A group expands in place. Each block may appear once.",
       "items": {
         "type": "string"
       },

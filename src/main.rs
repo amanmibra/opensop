@@ -120,13 +120,17 @@ enum Command {
     /// Find duplicated text and conflicting instructions in each agent's prompt
     #[command(
         after_help = docs!("lint"),
-        after_long_help = examples!("lint", "  sopc lint         List duplicates and conflicts to review
-  sopc lint --json  The same findings as JSON")
+        after_long_help = examples!("lint", "  sopc lint           List duplicates and conflicts to review
+  sopc lint --json    The same findings as JSON
+  sopc lint --strict  Exit 1 if there are any findings (for CI)")
     )]
     Lint {
         /// Machine-readable output
         #[arg(long)]
         json: bool,
+        /// Exit 1 if there are any findings, of any kind (without it, lint always exits 0)
+        #[arg(long)]
+        strict: bool,
     },
     /// Rewrite Markdown SOP files in one canonical style (YAML ones too with --yaml)
     #[command(
@@ -554,7 +558,7 @@ fn run(command: Command, dir: Option<PathBuf>) -> anyhow::Result<ExitCode> {
                 return Ok(ExitCode::FAILURE);
             }
         }
-        Command::Lint { json } => {
+        Command::Lint { json, strict } => {
             let root = root()?;
             let findings = analyze::lint(&load(&root)?);
             if json {
@@ -562,6 +566,10 @@ fn run(command: Command, dir: Option<PathBuf>) -> anyhow::Result<ExitCode> {
                 println!("{}", pretty_json(&serde_json::Value::Array(list), true));
             } else {
                 print!("{}", analyze::lint_text(&findings));
+            }
+            if strict && !findings.is_empty() {
+                eprintln!("{} finding(s); failing because of --strict", findings.len());
+                return Ok(ExitCode::FAILURE);
             }
         }
         Command::Fmt { check, yaml, yes } => return fmt(&root()?, check, yaml, yes),
@@ -726,7 +734,7 @@ fn migrate(root: &Path, yes: bool) -> anyhow::Result<ExitCode> {
     if !files.contains_key(CONFIG) {
         return Err(workspace::missing_config(&files).into());
     }
-    if !migrate::is_old(&files) {
+    if !migrate::needs_migrating(&files) {
         println!("{} is already in the current format; nothing to migrate", root.display());
         return Ok(ExitCode::SUCCESS);
     }

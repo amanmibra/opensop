@@ -399,7 +399,31 @@ fn conflict(a: &str, b: &str) -> Option<&'static str> {
     None
 }
 
+/// Number words that rules use for counts, as digits.
+const NUMBER_WORDS: &[(&str, &str)] = &[
+    ("once", "1"),
+    ("twice", "2"),
+    ("thrice", "3"),
+    ("one", "1"),
+    ("two", "2"),
+    ("three", "3"),
+    ("four", "4"),
+    ("five", "5"),
+    ("six", "6"),
+    ("seven", "7"),
+    ("eight", "8"),
+    ("nine", "9"),
+    ("ten", "10"),
+];
+
+/// Normalized text with number words written as digits.
+fn numerals(norm: &str) -> String {
+    let words = norm.split(' ').map(|w| NUMBER_WORDS.iter().find(|(n, _)| *n == w).map_or(w, |(_, d)| d));
+    words.collect::<Vec<_>>().join(" ")
+}
+
 fn numbers_differ_in_same_sentence(na: &str, nb: &str) -> bool {
+    let (na, nb) = (&numerals(na), &numerals(nb));
     let nums = |s: &str| -> Vec<String> { NUMBER.find_iter(s).map(|m| m.as_str().to_string()).collect() };
     let (numbers_a, numbers_b) = (nums(na), nums(nb));
     if numbers_a.is_empty() || numbers_b.is_empty() || numbers_a == numbers_b {

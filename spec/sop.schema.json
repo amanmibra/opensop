@@ -37,7 +37,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "A procedure the agent follows. Written as procedures/<id>.yaml; procedures/<id>.md (Markdown) holds the same fields, with only locked and delivery in its front matter. It says nothing about which agents use it; agents list it in `blocks`.",
+  "description": "A procedure the agent follows. Written as procedures/<id>.yaml; procedures/<id>.md (Markdown) holds the same fields, with only delivery in its front matter. It says nothing about which agents use it; agents list it in `blocks`.",
   "properties": {
     "id": {
       "description": "The file name without .yaml or .md. Set automatically; if you write it, it must match.",
@@ -48,12 +48,6 @@
       "description": "Heading shown in the prompt, e.g. \"Allergen check\".",
       "title": "Name",
       "type": "string"
-    },
-    "locked": {
-      "default": false,
-      "description": "If true, every agent must include this SOP (directly or through a group), or the build fails. Automated suggestions must leave it alone.",
-      "title": "Locked",
-      "type": "boolean"
     },
     "delivery": {
       "default": "prompt",

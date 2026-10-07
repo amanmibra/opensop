@@ -13,7 +13,7 @@ use serde_yaml_ng::{Mapping, Value};
 use std::sync::LazyLock;
 
 /// Front matter keys a Markdown SOP may set; everything else is written in the body.
-pub const SETTINGS: &[&str] = &["id", "locked", "delivery"];
+pub const SETTINGS: &[&str] = &["id", "delivery"];
 /// (heading, field), in the standard order.
 const SECTIONS: [(&str, &str); 3] =
     [("Steps", "procedureSteps"), ("Never", "forbiddenActions"), ("Warning signs", "warningSigns")];
@@ -62,6 +62,7 @@ pub fn parse_markdown(text: &str, path: &str, issues: &mut Vec<Issue>, warnings:
     let first = text[..text.len() - body.len()].matches('\n').count() + 1; // line number of the body
     let mut r = Report { path, issues, warnings };
     let mut map = load_yaml(meta, path, r.issues)?;
+    crate::workspace::removed_fields(&mut map, path, r.issues);
     let fields: Vec<String> = map.keys().filter_map(|k| k.as_str()).map(String::from).collect();
     for key in fields.iter().filter(|k| !SETTINGS.contains(&k.as_str())) {
         if crate::model::OLD_SOP_FIELDS.contains(&key.as_str()) {
@@ -337,9 +338,6 @@ pub fn kv(key: &str, value: &str, indent: usize) -> String {
 /// The settings that differ from their defaults, as YAML lines.
 fn settings(sop: &Sop) -> Vec<String> {
     let mut out = vec![];
-    if sop.locked {
-        out.push("locked: true".into());
-    }
     if sop.delivery != "prompt" {
         out.push(format!("delivery: {}", sop.delivery));
     }
@@ -483,8 +481,7 @@ fn output_difference(a: &Sop, b: &Sop) -> Option<String> {
     if let Some(k) = keys.iter().find(|k| pa[**k] != pb[**k]) {
         return Some(k.to_string());
     }
-    let settings = [("locked", a.locked != b.locked), ("delivery", a.delivery != b.delivery)];
-    settings.iter().find(|(_, differ)| *differ).map(|(k, _)| k.to_string())
+    (a.delivery != b.delivery).then(|| "delivery".to_string())
 }
 
 /// The canonical text of an SOP file in a format: (new path, new text). Fails when the file

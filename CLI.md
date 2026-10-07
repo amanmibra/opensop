@@ -33,8 +33,8 @@ To uninstall, delete the binary: `rm ~/.local/bin/sopc`. If you installed the im
 
 | Code | Meaning |
 |---|---|
-| `0` | Success. `sopc lint` exits 0 even when it finds something, because its findings are advisory. |
-| `1` | Failure: invalid files, a build that's out of date (`--check`), a failed `compare`, a live prompt that drifted or couldn't be read (`verify`), files left unformatted to keep comments, or a git or file error. |
+| `0` | Success. `sopc lint` exits 0 even when it finds something, because its findings are advisory (unless `--strict`). |
+| `1` | Failure: invalid files, a build that's out of date (`--check`), lint findings with `--strict`, a failed `compare`, a live prompt that drifted or couldn't be read (`verify`), files left unformatted to keep comments, or a git or file error. |
 | `2` | Usage error: an unknown command or flag, a typo (sopc suggests the closest command), or a compile-only flag used with a command. |
 
 A closed pipe (`sopc guide | head`) exits 0.
@@ -82,16 +82,24 @@ The error codes are listed in [FORMAT.md](FORMAT.md#validation).
 
 ## sopc lint
 
-Finds duplicated text and conflicting instructions in each agent's compiled prompt: the same sentence twice, the same sentence with different numbers (`10pm` vs `11pm`), "always X" vs "never X", near-identical sentences that have drifted, and variables an agent sets but never uses. The findings are advisory: lint exits 0.
+Finds duplicated text and conflicting instructions in each agent's compiled prompt: the same sentence twice, the same sentence with different numbers (`10pm` vs `11pm`), "always X" vs "never X", near-identical sentences that have drifted, and variables an agent sets but never uses. The findings are advisory: lint exits 0, unless you pass `--strict`.
 
 ```sh
 sopc lint
 sopc lint --json
+sopc lint --strict   # exit 1 if there are any findings (for CI)
 ```
 
 | Flag | Effect |
 |---|---|
 | `--json` | Machine-readable output |
+| `--strict` | Exit 1 if there are any findings, of any kind |
+
+Each finding has a code: `numeric_conflict` (same sentence, different numbers; `once`, `twice` and `one` to `ten` count as numbers), `negation_conflict` ("always X" vs "never X"), `duplicate_text`, `near_duplicate` and `unused_variable`.
+
+**`--strict` fails on every kind, not only the conflicts.** Each one is cheap to fix and worth fixing before a merge: a duplicate is text to delete, an unused variable is a value to remove, and a near-duplicate is often a contradiction lint can't classify, because the word that changed isn't a number or a negation ("before" vs "after"). Lint has no way to silence a single finding, so when two sentences really should both stay, reword one.
+
+**Lint compares wording, not meaning.** It only catches a contradiction when both sentences are written almost the same way. With a shared instruction that says "Never upsell more than once per call.", an agent's `context` saying "Never upsell more than twice per call." (`numeric_conflict`) or "Always upsell more than once per call." (`negation_conflict`) is caught, but the paraphrase "Upsell up to 2 times per call." is not. Read the prompt diffs from `sopc plan` for those.
 
 ## sopc fmt
 
@@ -285,7 +293,10 @@ sopc compare --originals prompts/
 
 ## sopc migrate
 
-Converts a folder written for sopc v0.0.8 or earlier to the current format, in place. In the old format, bases and SOPs chose their agents (`agents`, `exclude`), agents inherited bases (`inherits`) and opted out (`exclude`), and `position` and `sop_order` set the order. Now each agent lists its blocks in order. Other commands fail on an old folder with `old_format` errors that say to run this.
+Converts a folder written for an earlier sopc to the current format, in place. Other commands fail on such a folder with errors that say to run this.
+
+- **sopc v0.0.8 and earlier** (`old_format` errors): bases and SOPs chose their agents (`agents`, `exclude`), agents inherited bases (`inherits`) and opted out (`exclude`), and `position` and `sop_order` set the order. Now each agent lists its blocks in order.
+- **sopc v0.0.9** (`removed_field` errors): instructions and SOPs could set `locked: true`, so every agent had to include them. `locked` is gone; `migrate` deletes the line from each file that has it, and nothing else changes.
 
 ```sh
 sopc migrate         # show the plan; write nothing
@@ -296,12 +307,12 @@ sopc migrate --yes   # write it
 |---|---|
 | `-y`, `--yes` | Write the changes (without it, only the plan is shown) |
 
-What it does:
+What it does to a v0.0.8 folder:
 
 - `bases/<id>.md` moves to `instructions/<id>.md`; `agents`, `exclude`, `inherits` and `position` are removed from its front matter (the front matter goes if nothing is left in it).
 - SOPs lose `agents` and `exclude`; `sop_order` is removed from `sopc.yaml`.
 - Each agent's `instructions` becomes `context`, written right after its platform id, followed by `blocks`: exactly the blocks the old rules gave it, in the order its old prompt had them, one per line. `inherits` and `exclude` are removed. No groups are created; add them afterwards where they help.
-- A locked block must now be in every agent. A locked block that some agents didn't get loses its lock, with a warning naming it and those agents.
+- `locked` is removed from every base and SOP. (A locked block could not be excluded, so those agents still get it in `blocks`.)
 - Files are edited as text, so comments and layout are kept. Comments directly above a removed field (or on its line) go with it; the plan lists each one.
 
 ```console
@@ -311,7 +322,6 @@ Migrating sops to the current format (13 file(s) change):
   ...
   sops/bases/brand-voice.md → sops/instructions/brand-voice.md: removed agents, exclude, locked
   ...
-warning: `brand-voice` was locked, but not every agent uses it (not: la-casita); a locked block must be in every agent, so its lock is removed
 ...
 Checked: all 4 agent prompt(s) stay the same, except each agent's own text (now `context`) moves to the top.
 Nothing written. Rerun with --yes to write these changes.
@@ -319,7 +329,17 @@ Nothing written. Rerun with --yes to write these changes.
 
 **It checks before and after writing.** Every agent's prompt, `get_sop` payloads and tools are built from the migrated files and compared with what the old rules built: they must be identical, except that the agent's own text moves from after the top bases to the very top of the prompt. Each edited file is also read back to confirm it holds the same values minus the removed fields. If anything differs, nothing is written (`migrate_failed`). With `--yes`, each file is written through a temporary file and renamed into place, old `bases/` files are deleted last, and the check runs again on the files on disk. Then run `sopc` to rebuild `build/`: every hash in `lock.json` changes, because the block formats changed.
 
-A folder that's already partly migrated (it has `instructions/`, or an agent with `blocks` or `context`) is refused; finish it by hand. A folder in the current format prints `already in the current format` and exits 0.
+A v0.0.9 folder only loses its `locked` lines (and comments directly above them, which the plan lists):
+
+```console
+$ sopc migrate
+Removing fields the format no longer has from sops (1 file(s) change):
+  sops/instructions/brand-voice.md: removed locked
+Checked: all 3 agent prompt(s) stay the same.
+Nothing written. Rerun with --yes to write these changes.
+```
+
+A folder that's already partly migrated (it has `instructions/`, or an agent with `blocks` or `context`) is refused; finish it by hand. A folder in the current format prints `already in the current format` and exits 0. `plan` and `affected` build a git ref from before either change as migrating it would, so comparing with it works.
 
 ## sopc skills
 

@@ -86,9 +86,9 @@ Import plan: 30 agents (LiveKit), sops/ at the repo root
 
 Instructions (5)
   restaurant-host   identity + what the host does          all 30
-  brand-voice       tone, one question at a time           all 30   lock? (recommended)
+  brand-voice       tone, one question at a time           all 30
   pizza-context     sizes, toppings, gluten-free note      12 pizza agents
-  allergy-policy    allergen disclaimer                    all 30   lock? (recommended)
+  allergy-policy    allergen disclaimer                    all 30
   closing           repeat total and time before hanging up all 30, at the end
 
 SOPs (4)
@@ -104,18 +104,16 @@ Groups (2)
 Per agent: restaurant_name, hours, menu link become variables; 2–6 sentences stay in each agent's own context (first in its prompt).
 
 Decisions needed
-  1. Lock brand-voice and allergy-policy so no agent can drop them? (default: yes)
-  2. Upsell rule differs: 29 agents say "once", luigis-trattoria says "twice". Unify on "once"? (default: keep both, as a variable, and flag it)
-  3. No stated goal for reservations and large-orders. Use these? (default: yes)
+  1. Upsell rule differs: 29 agents say "once", luigis-trattoria says "twice". Unify on "once"? (default: keep both, as a variable, and flag it)
+  2. No stated goal for reservations and large-orders. Use these? (default: yes)
        reservations: "The caller has a confirmed table, or knows why one isn't available."
        large-orders: "The order is placed with a pickup time the kitchen can meet."
-  4. Passages that may or may not be procedures: "late-night menu" in 3 agents. SOP or plain text? (default: plain text)
+  3. Passages that may or may not be procedures: "late-night menu" in 3 agents. SOP or plain text? (default: plain text)
 ```
 
 Then ask: **"OK to write these files? Answer the numbered decisions or say 'defaults'."** Wait for the answer. Apply their changes to the plan before writing.
 
 What belongs in "Decisions needed":
-- **Locks.** Never lock a block without the user's yes. A locked block must be in every agent, so only offer locks for blocks every agent has.
 - **Drift.** The same sentence with different values across agents. The default keeps each agent's current behavior (a variable with each agent's value) and records it as a conflict. Unify only if the user says so.
 - **Goals you'd have to invent.** Show the exact sentence you'd add.
 - **Unclear classification.** Passages that could be a procedure or plain text.
@@ -129,8 +127,7 @@ Blocks (instructions and SOPs) never say which agents use them. Each agent file 
 
 | Text in the originals | Goes to |
 |---|---|
-| Shared, not a procedure (identity, tone, policies) | An instruction, `sops/instructions/<id>.md` (plain Markdown; front matter only for `locked: true`) |
-| Shared by every agent and must never be dropped | An instruction with `locked: true` (only if approved; it must then be in every agent) |
+| Shared, not a procedure (identity, tone, policies) | An instruction, `sops/instructions/<id>.md` (plain Markdown, no front matter needed) |
 | A procedure: a situation and what to do in it | An SOP (see below) |
 | The same blocks, in the same order, in many agents | A group in `sopc.yaml`; those agents list the group in `blocks` instead |
 | A near-copy that differs only by a value (name, hours, phone number, link) | One shared sentence with a `{{placeholder}}`; each agent's value in its `variables` |
@@ -235,7 +232,7 @@ Run `sopc fmt` once more (then `sopc` if it changed anything) so the files are i
 ```
 Imported 30 agents into sops/
 
-  5 instructions (2 locked), 4 SOPs, 2 groups, 30 agent files
+  5 instructions, 4 SOPs, 2 groups, 30 agent files
   compare: all 30 agents pass (0 missing, 0 changed; 41 sentences reworded into SOP steps)
   added: 2 goals you approved
 

@@ -1,6 +1,7 @@
 //! `sopc migrate`: converts a folder from the format of sopc v0.0.8 and earlier, where bases and SOPs chose
 //! their agents (`agents`, `exclude`, `inherits`, `position`, `sop_order`), to the current one,
-//! where each agent lists its blocks in order.
+//! where each agent lists its blocks in order. It also removes fields the format no longer has
+//! (`locked`, from v0.0.9 and earlier).
 //!
 //! The old format is read here and nowhere else. Each agent's blocks are what the old rules gave
 //! it, in the order the old prompt had them, so every prompt stays the same except that the
@@ -37,20 +38,30 @@ pub struct Migration {
     /// Files to write (new or changed), and old files to delete afterwards.
     pub writes: Vec<(String, String)>,
     pub removes: Vec<String>,
-    /// Locks removed because some agents don't use the block: (block id, those agents).
-    pub dropped_locks: Vec<(String, Vec<String>)>,
+    /// Only fields the format no longer has are removed (the folder was otherwise current).
+    pub removed_fields_only: bool,
     /// Comments the edits remove: (path, "line N: # text").
     pub lost_comments: Vec<(String, Vec<String>)>,
     /// What each agent must build, by id.
     pub expected: BTreeMap<String, Expected>,
 }
 
-/// Whether a folder (as a file map) is in the old format.
-pub fn is_old(files: &BTreeMap<String, String>) -> bool {
+/// Whether loading a folder (as a file map) reports an issue with this code.
+fn reports(files: &BTreeMap<String, String>, code: &str) -> bool {
     match load_files(files) {
-        Err(Issues(issues)) => issues.iter().any(|i| i.code == "old_format"),
+        Err(Issues(issues)) => issues.iter().any(|i| i.code == code),
         Ok(_) => false,
     }
+}
+
+/// Whether a folder (as a file map) is in the old format.
+pub fn is_old(files: &BTreeMap<String, String>) -> bool {
+    reports(files, "old_format")
+}
+
+/// Whether `sopc migrate` has something to do: the old format, or fields the format no longer has.
+pub fn needs_migrating(files: &BTreeMap<String, String>) -> bool {
+    is_old(files) || reports(files, "removed_field")
 }
 
 fn failed(path: &str, msg: impl Into<String>) -> Issue {
@@ -70,6 +81,7 @@ struct OldBlock {
     exclude: Vec<String>,
     inherits: Vec<String>,
     bottom: bool,
+    /// Old locked blocks couldn't be excluded. The lock itself is dropped when migrating.
     locked: bool,
 }
 
@@ -305,9 +317,18 @@ fn yaml_list(key: &str, items: &[String]) -> String {
 
 // --- migrating -----------------------------------------------------------------------------------
 
-/// Converts an old-format folder (relative path → text). Fails without changing anything when
-/// a file can't be read or edited exactly.
+/// Converts an old-format folder (relative path → text), or removes fields the format no longer
+/// has from a current one. Fails without changing anything when a file can't be read or edited
+/// exactly.
 pub fn migrate(files: &BTreeMap<String, String>) -> Result<Migration, Issues> {
+    if is_old(files) {
+        migrate_old(files)
+    } else {
+        remove_fields(files)
+    }
+}
+
+fn migrate_old(files: &BTreeMap<String, String>) -> Result<Migration, Issues> {
     let mut issues = vec![];
     let in_folder = |folder: &'static str| {
         files.iter().filter(move |(p, _)| p.starts_with(folder) && p[folder.len()..].starts_with('/'))
@@ -372,9 +393,9 @@ pub fn migrate(files: &BTreeMap<String, String>) -> Result<Migration, Issues> {
         let meta = if markdown { front_matter(text) } else { text.as_str() };
         let Some(map) = load_yaml(meta, path, &mut issues) else { continue };
         let stripped = if markdown {
-            remove_front_matter_keys(text, model::OLD_SOP_FIELDS)
+            remove_front_matter_keys(text, &old_sop_keys())
         } else {
-            remove_keys(text, model::OLD_SOP_FIELDS) + "\n"
+            remove_keys(text, &old_sop_keys()) + "\n"
         };
         match parse_sop_file(path, &stripped) {
             Ok((sop, _)) => sops.push(old_block(stem(path), &map, Some(sop), String::new())),
@@ -423,50 +444,28 @@ pub fn migrate(files: &BTreeMap<String, String>) -> Result<Migration, Issues> {
         return Err(Issues(issues));
     }
 
-    // Each agent's blocks under the old rules, and the locks that can't stay.
+    // Each agent's blocks under the old rules.
     let mut compositions: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for a in &agents {
         let blocks = old_composition(&bases, &sops, &order, a);
         m.expected.insert(a.agent.id.clone(), expected(&blocks, &a.agent, &config));
         compositions.insert(a.agent.id.clone(), blocks.iter().map(|b| b.id.clone()).collect());
     }
-    let mut unlocked = BTreeSet::new();
-    for b in bases.iter().chain(&sops).filter(|b| b.locked) {
-        let missing: Vec<String> =
-            compositions.iter().filter(|(_, ids)| !ids.contains(&b.id)).map(|(a, _)| a.clone()).collect();
-        if !missing.is_empty() {
-            unlocked.insert(b.id.clone());
-            m.dropped_locks.push((b.id.clone(), missing));
-        }
-    }
 
     // The edits.
     edit(&mut m, CONFIG, CONFIG, config_new, removed_note(&config_map, model::OLD_CONFIG_FIELDS));
     for (path, map) in &base_meta {
         let id = stem(path);
-        let mut keys = model::OLD_INSTRUCTION_FIELDS.to_vec();
-        if unlocked.contains(id) {
-            keys.push("locked");
-        }
+        let keys = [model::OLD_INSTRUCTION_FIELDS, model::REMOVED_FIELDS].concat();
         let text = remove_front_matter_keys(&files[path], &keys);
         check_edit(path, map, front_matter(&text), &keys, &Mapping::new(), &mut issues);
         edit(&mut m, path, &format!("instructions/{id}.md"), text, removed_note(map, &keys));
     }
-    for (path, (map, stripped)) in &sop_meta {
-        let mut keys = model::OLD_SOP_FIELDS.to_vec();
-        let text = if unlocked.contains(stem(path)) {
-            keys.push("locked");
-            if path.ends_with(".md") {
-                remove_front_matter_keys(stripped, &["locked"])
-            } else {
-                remove_keys(stripped, &["locked"]) + "\n"
-            }
-        } else {
-            stripped.clone()
-        };
-        let meta = if path.ends_with(".md") { front_matter(&text) } else { text.as_str() };
+    for (path, (map, text)) in &sop_meta {
+        let keys = old_sop_keys();
+        let meta = if path.ends_with(".md") { front_matter(text) } else { text.as_str() };
         check_edit(path, map, meta, &keys, &Mapping::new(), &mut issues);
-        edit(&mut m, path, path, text, removed_note(map, &keys));
+        edit(&mut m, path, path, text.clone(), removed_note(map, &keys));
     }
     for (path, map) in &agent_maps {
         let blocks = &compositions[stem(path)];
@@ -495,6 +494,51 @@ pub fn migrate(files: &BTreeMap<String, String>) -> Result<Migration, Issues> {
         return Err(Issues(issues));
     }
     m.changes.sort();
+    m.files = new_files;
+    Ok(m)
+}
+
+/// The fields an old SOP file loses.
+fn old_sop_keys() -> Vec<&'static str> {
+    [model::OLD_SOP_FIELDS, model::REMOVED_FIELDS].concat()
+}
+
+/// Removes fields the format no longer has (`locked`) from a folder that is otherwise current.
+/// They never reached a prompt, so every prompt stays the same; that is checked by building it.
+fn remove_fields(files: &BTreeMap<String, String>) -> Result<Migration, Issues> {
+    let mut issues = vec![];
+    let mut m = Migration { removed_fields_only: true, ..Migration::default() };
+    let mut new_files = files.clone();
+    let keys = model::REMOVED_FIELDS;
+    let blocks = files
+        .iter()
+        .filter(|(p, _)| (p.starts_with("instructions/") && p.ends_with(".md")) || p.starts_with("procedures/"));
+    for (path, text) in blocks {
+        let markdown = path.ends_with(".md");
+        let meta = if markdown { front_matter(text) } else { text.as_str() };
+        let Some(map) = load_yaml(meta, path, &mut issues) else { continue };
+        if !keys.iter().any(|k| map.contains_key(*k)) {
+            continue;
+        }
+        let new = if markdown { remove_front_matter_keys(text, keys) } else { remove_keys(text, keys) + "\n" };
+        let new_meta = if markdown { front_matter(&new) } else { new.as_str() };
+        check_edit(path, &map, new_meta, keys, &Mapping::new(), &mut issues);
+        let lost = lost_comments(path, text, &new);
+        if !lost.is_empty() {
+            m.lost_comments.push((path.clone(), lost.iter().map(|(n, c)| format!("line {n}: # {c}")).collect()));
+        }
+        m.changes.push((path.clone(), path.clone(), format!(": removed {}", keys.join(", "))));
+        m.writes.push((path.clone(), new.clone()));
+        new_files.insert(path.clone(), new);
+    }
+    if !issues.is_empty() {
+        return Err(Issues(issues));
+    }
+    let build = render_workspace(&load_files(&new_files)?)?;
+    for (id, r) in build.agents {
+        let e = Expected { prompt: r.prompt, tool_payload: r.tool_payload, tools: r.tools };
+        m.expected.insert(id, e);
+    }
     m.files = new_files;
     Ok(m)
 }
@@ -557,9 +601,9 @@ pub fn verify(files: &BTreeMap<String, String>, expected: &BTreeMap<String, Expe
     }
 }
 
-/// Converts an old-format file map in memory, for building a git ref from before the change.
+/// Migrates a file map in memory if it needs it, for building a git ref from before the change.
 pub fn convert(files: BTreeMap<String, String>) -> Result<BTreeMap<String, String>, Issues> {
-    if !is_old(&files) {
+    if !needs_migrating(&files) {
         return Ok(files);
     }
     Ok(migrate(&files)?.files)
@@ -567,16 +611,15 @@ pub fn convert(files: BTreeMap<String, String>) -> Result<BTreeMap<String, Strin
 
 /// The plan `sopc migrate` prints; `show` turns a path in the folder into one to print.
 pub fn plan_text(m: &Migration, root: &str, show: &dyn Fn(&str) -> String) -> String {
-    let mut out = vec![format!("Migrating {root} to the current format ({} file(s) change):", m.changes.len())];
+    let n = m.changes.len();
+    let mut out = vec![if m.removed_fields_only {
+        format!("Removing fields the format no longer has from {root} ({n} file(s) change):")
+    } else {
+        format!("Migrating {root} to the current format ({n} file(s) change):")
+    }];
     for (path, new_path, what) in &m.changes {
         let moved = if new_path == path { String::new() } else { format!(" → {}", show(new_path)) };
         out.push(format!("  {}{moved}{what}", show(path)));
-    }
-    for (id, agents) in &m.dropped_locks {
-        out.push(format!(
-            "warning: `{id}` was locked, but not every agent uses it (not: {}); a locked block must be in every agent, so its lock is removed",
-            agents.join(", ")
-        ));
     }
     if !m.lost_comments.is_empty() {
         out.push("Comments that go with removed fields:".into());
@@ -585,9 +628,13 @@ pub fn plan_text(m: &Migration, root: &str, show: &dyn Fn(&str) -> String) -> St
             out.extend(lines.iter().map(|l| format!("    {l}")));
         }
     }
-    out.push(format!(
-        "Checked: all {} agent prompt(s) stay the same, except each agent's own text (now `context`) moves to the top.",
-        m.expected.len()
-    ));
+    out.push(if m.removed_fields_only {
+        format!("Checked: all {} agent prompt(s) stay the same.", m.expected.len())
+    } else {
+        format!(
+            "Checked: all {} agent prompt(s) stay the same, except each agent's own text (now `context`) moves to the top.",
+            m.expected.len()
+        )
+    });
     out.join("\n") + "\n"
 }

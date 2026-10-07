@@ -573,6 +573,56 @@ fn compare_exit_code() {
     assert!(out.stderr.contains("error [no_prompts]"), "{}", out.stderr);
 }
 
+/// A copy of the fixture with one more sentence in tonys-pizza's `context`, which the shared
+/// `brand-voice` instruction contradicts or not ("Never upsell more than once per call.").
+fn lint_with_context(sentence: &str) -> (Output, Output) {
+    let (_dir, root) = repo();
+    edit(
+        &Path::new(&root).join("agents/tonys-pizza.yaml"),
+        "Pickup only after 10pm.",
+        &format!("Pickup only after 10pm. {sentence}"),
+    );
+    (
+        sopc_in(&repo_root(), &["lint", "--dir", &root, "--json"], &[]),
+        sopc_in(&repo_root(), &["lint", "--dir", &root, "--strict"], &[]),
+    )
+}
+
+#[test]
+fn lint_strict_fails_on_a_context_that_contradicts_a_shared_rule() {
+    for (sentence, code) in [
+        ("Never upsell more than twice per call.", "numeric_conflict"),
+        ("Always upsell more than once per call.", "negation_conflict"),
+    ] {
+        let (json, strict) = lint_with_context(sentence);
+        assert_eq!(json.code, 0, "without --strict lint exits 0");
+        let findings: serde_json::Value = serde_json::from_str(&json.stdout).unwrap();
+        assert_eq!(findings.as_array().unwrap().len(), 1, "{sentence}: {findings}");
+        assert_eq!(findings[0]["code"], code, "{sentence}");
+        assert_eq!(findings[0]["agents"], serde_json::json!(["tonys-pizza"]));
+        assert_eq!(
+            findings[0]["sources"],
+            serde_json::json!([
+                {"block": "agent `tonys-pizza`", "text": sentence},
+                {"block": "instruction `brand-voice`", "text": "Never upsell more than once per call."},
+            ])
+        );
+        assert_eq!(strict.code, 1, "{sentence}: --strict fails\n{}", strict.stdout);
+        assert!(strict.stdout.contains(&format!("[{code}]")), "{}", strict.stdout);
+        assert_eq!(strict.stderr, "1 finding(s); failing because of --strict\n");
+    }
+}
+
+#[test]
+fn lint_does_not_catch_a_paraphrased_contradiction() {
+    // Known limitation: lint compares wording, not meaning. "Up to 2 times" contradicts "never more
+    // than once", but the sentences share too few words. If a semantic check starts catching this,
+    // update the test (and CLI.md) on purpose.
+    let (json, strict) = lint_with_context("Upsell up to 2 times per call.");
+    assert_eq!(json.stdout, "[]\n");
+    assert_eq!(strict.code, 0, "{}", strict.stdout);
+}
+
 #[test]
 fn overlap_and_lint_run() {
     let out = run(0, &["overlap", fixture().join("originals").to_str().unwrap()]);
@@ -580,6 +630,7 @@ fn overlap_and_lint_run() {
     assert!(out.stdout.contains("Near-copies"));
     let out = run(0, &["lint", "--dir", fixture().join("sops").to_str().unwrap(), "--json"]);
     assert_eq!(out.stdout, "[]\n");
+    run(0, &["lint", "--dir", fixture().join("sops").to_str().unwrap(), "--strict"]);
 }
 
 #[test]
@@ -646,7 +697,7 @@ fn export_prints_every_block_as_json() {
     let instruction = out["instructions"].as_array().unwrap().iter().find(|b| b["id"] == "brand-voice").unwrap();
     assert_eq!(
         instruction,
-        &serde_json::json!({"id": "brand-voice", "locked": true, "file": "instructions/brand-voice.md",
+        &serde_json::json!({"id": "brand-voice", "file": "instructions/brand-voice.md",
             "text": "Speak warmly and briefly. Ask one question at a time. Never upsell more than once per call."})
     );
     let sop = out["sops"].as_array().unwrap().iter().find(|s| s["id"] == "allergen-check").unwrap();
@@ -802,13 +853,13 @@ fn migrate_shows_the_plan_then_writes_with_yes() {
         "  sops/bases/closing.md → sops/instructions/closing.md: removed agents, position\n",
         "  sops/agents/tonys-pizza.yaml: instructions → context; removed inherits; blocks: restaurant-host, pizza-context, brand-voice, allergen-check, delivery-handling, closing\n",
         "  sops/sopc.yaml: removed sop_order\n",
-        "warning: `brand-voice` was locked, but not every agent uses it (not: la-casita); a locked block must be in every agent, so its lock is removed\n",
         "Comments that go with removed fields:\n  sops/sopc.yaml\n    line 14: # SOPs listed here come first, in this order. Unlisted SOPs follow alphabetically.\n",
         "Checked: all 4 agent prompt(s) stay the same, except each agent's own text (now `context`) moves to the top.\n",
         "Nothing written. Rerun with --yes to write these changes.\n",
     ] {
         assert!(out.stdout.contains(line), "missing {line:?} in:\n{}", out.stdout);
     }
+    assert!(!out.stdout.contains("warning"), "locks are dropped without warnings:\n{}", out.stdout);
     assert_eq!(tree(Path::new(&root)), before, "a dry run writes nothing");
 
     let out = sopc_in(dir.path(), &["migrate", "--yes"], &[]);
@@ -842,6 +893,36 @@ fn migrated_prompts_match_the_old_build_except_the_context() {
     }
     // The migrated folder is the fixture.
     assert_eq!(tree(Path::new(&root)), tree(&fixture().join("sops")));
+}
+
+#[test]
+fn locked_says_to_run_migrate_which_removes_it() {
+    let (dir, root) = repo();
+    let voice = Path::new(&root).join("instructions/brand-voice.md");
+    std::fs::write(&voice, format!("---\nlocked: true\n---\n{}", read(&voice))).unwrap();
+    git(dir.path(), &["init", "-q", "-b", "main"]);
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+    let out = sopc_in(dir.path(), &["validate"], &[]);
+    assert_eq!(out.code, 1);
+    assert_eq!(
+        out.stderr,
+        "sops/instructions/brand-voice.md: error [removed_field] `locked` is no longer part of the format; run `sopc migrate` to remove it from this folder (or delete the line)\n"
+    );
+    let before = tree(Path::new(&root));
+    let out = run_ok(dir.path(), &["migrate"]);
+    assert_eq!(
+        out.stdout,
+        "Removing fields the format no longer has from sops (1 file(s) change):\n  sops/instructions/brand-voice.md: removed locked\nChecked: all 3 agent prompt(s) stay the same.\nNothing written. Rerun with --yes to write these changes.\n"
+    );
+    assert_eq!(tree(Path::new(&root)), before, "a dry run writes nothing");
+    let out = run_ok(dir.path(), &["migrate", "--yes"]);
+    assert!(out.stdout.contains("Wrote 1 file(s). Verified on disk: 3 agent prompt(s) match.\n"), "{}", out.stdout);
+    assert_eq!(tree(Path::new(&root)), tree(&fixture().join("sops")));
+    run_ok(dir.path(), &["validate"]);
+    // The committed folder still has the lock; plan builds it as migrating would.
+    let out = run(0, &["plan", "--dir", &root, "--against", "main", "--summary"]);
+    assert_eq!(out.stdout, "No agent prompts change.\n", "{}", out.stderr);
 }
 
 #[test]

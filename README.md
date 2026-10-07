@@ -56,7 +56,7 @@ The skill installs the `sopc` CLI if it's missing, finds your existing prompts (
 |---|---|---|
 | Collect | agent | Copies each existing prompt into `sops/originals/`, asks for anything it can't find |
 | Map | `sopc overlap` | Finds text every prompt shares, text some share, and near-copies that differ by a value (or have drifted) |
-| Plan | you | Approve a one-screen plan: which instructions, SOPs and groups, which to lock, how to handle drift |
+| Plan | you | Approve a one-screen plan: which instructions, SOPs and groups, how to handle drift |
 | Build | agent | Writes the files, keeping the original wording |
 | Verify | `sopc compare` | Fails if any original sentence is missing or changed; the agent repeats until it passes |
 | Review | `sopc lint` | Flags duplicates and conflicts (10pm vs 11pm, "always X" vs "never X") for you to decide |
@@ -137,7 +137,6 @@ An SOP reads like a checklist:
 ```
 
 - **Groups** in `sopc.yaml` name a set of blocks many agents share; an agent lists the group like a block.
-- **Lock a block** (`locked: true`) and the build fails unless every agent includes it.
 - **The format is checked strictly,** and every mistake is reported with its file and line. See the [SOP rules](FORMAT.md#sop-rules). SOPs can also be written in YAML; `sopc convert` switches between the two.
 - Coming from sopc v0.0.8 or earlier? `sopc migrate` converts the folder and checks every prompt stays the same.
 
@@ -177,9 +176,10 @@ Every command and flag is in the [CLI reference](CLI.md), and `sopc <command> --
 ### In CI
 
 ```sh
-sopc --check      # Fail if sops/build is out of date
-sopc fmt --check  # Fail if SOP files aren't formatted
-sopc validate     # Fail on errors
+sopc --check        # Fail if sops/build is out of date
+sopc fmt --check    # Fail if SOP files aren't formatted
+sopc validate       # Fail on errors
+sopc lint --strict  # Fail on duplicated or conflicting instructions
 ```
 
 To run your own tests on just the agents a pull request changes, see the [behavior gate](examples/behavior-gate). To block changes that make agents worse with Braintrust evals, see the [Braintrust example](examples/braintrust-evals). To catch prompts edited in a platform's dashboard, run `sopc verify` nightly: see the [drift check](examples/drift-check).
