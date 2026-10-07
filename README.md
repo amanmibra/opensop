@@ -9,7 +9,7 @@ The SOP compiler: modular, git-versioned instructions for teams managing multipl
 Write shared instructions and SOPs once. sopc compiles each agent's full prompt<br>
 and shows exactly which agents a change touches.
 
-[Quickstart](#quickstart) · [How it works](#how-it-works) · [Usage](#usage) · [CLI reference](CLI.md) · [Format](FORMAT.md) · [Example](examples/livekit-restaurant)
+[Concepts](https://github.com/amanmibra/whatsop) · [Quickstart](#quickstart) · [How it works](#how-it-works) · [Usage](#usage) · [CLI reference](CLI.md) · [Format](FORMAT.md) · [Example](examples/livekit-restaurant)
 
 </div>
 
