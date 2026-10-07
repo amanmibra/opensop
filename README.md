@@ -23,6 +23,10 @@ Running one agent per customer usually means dozens of near-identical prompts ma
 
 sopc keeps the shared parts in one place, in git, and compiles them into one prompt per agent.
 
+<p align="center"><img src="docs/images/plan-and-evals.png" alt="sopc plan showing a bad edit to a shared allergen SOP reaching 4 agents, and the CI eval check failing on the regressed calls with the transcript attached" width="760"></p>
+
+<p align="center"><sub>A bad edit to one shared SOP: <code>sopc plan</code> shows the 4 agents it reaches, and the <a href="examples/braintrust-evals">eval gate</a> blocks the PR with the failing call.</sub></p>
+
 Not related to Mozilla's `sops` (secrets).
 
 ## Quickstart
