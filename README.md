@@ -60,7 +60,7 @@ The skill installs the `sopc` CLI if it's missing, finds your existing prompts (
 |---|---|---|
 | Collect | agent | Copies each existing prompt into `sops/originals/`, asks for anything it can't find |
 | Map | `sopc overlap` | Finds text every prompt shares, text some share, and near-copies that differ by a value (or have drifted) |
-| Plan | you | Approve a one-screen plan: which bases and SOPs, which to lock, how to handle drift |
+| Plan | you | Approve a one-screen plan: which instructions, SOPs and groups, which to lock, how to handle drift |
 | Build | agent | Writes the files, keeping the original wording |
 | Verify | `sopc compare` | Fails if any original sentence is missing or changed; the agent repeats until it passes |
 | Review | `sopc lint` | Flags duplicates and conflicts (10pm vs 11pm, "always X" vs "never X") for you to decide |
@@ -100,20 +100,32 @@ See the [LiveKit example](examples/livekit-restaurant) for a complete agent.
 
 ## How it works
 
-Prompts are compiled from three kinds of files:
+Prompts are compiled from blocks, and each agent lists the blocks it uses:
 
-| | File | Holds | Reaches agents by |
-|---|---|---|---|
-| 🧱 | `bases/*.md` | identity, tone, context, policy | `inherits:` in the agent, or `agents: "*"` |
-| 📋 | `procedures/*.md` | SOPs: goal, steps, never-do's, warning signs, tools | `agents: [...]` in the SOP |
-| 🎙️ | `agents/*.yaml` | platform id, values for `{{placeholders}}`, agent-only text | one file per agent |
+| | File | Holds |
+|---|---|---|
+| 🧱 | `instructions/*.md` | shared text: identity, tone, context, policy |
+| 📋 | `procedures/*.md` | SOPs: goal, steps, never-do's, warning signs, tools |
+| 🎙️ | `agents/*.yaml` | one per agent: platform id, its own text, its blocks in order, values for `{{placeholders}}` |
+
+A block doesn't say who uses it; the agent file does, in prompt order:
+
+```yaml
+livekit: tonys-pizza
+context: |
+  Tony's is a wood-fired pizza shop in Brooklyn. Pickup only after 10pm.
+blocks:
+  - restaurant-host
+  - brand-voice
+  - allergen-check
+  - closing
+variables:
+  menu_allergen_link: tonys.com/allergens
+```
 
 An SOP reads like a checklist:
 
 ```markdown
----
-agents: "*"
----
 # Allergen check
 
 **Goal:** Customer leaves knowing whether their order is safe for their allergy.
@@ -126,9 +138,10 @@ agents: "*"
 - Never say an item is "allergen-free" or "safe"
 ```
 
-- **The format is checked strictly,** and every mistake is reported with its file and line. See the [SOP rules](FORMAT.md#sop-rules).
-- **Lock a base or SOP** (`locked: true`) and no agent can drop it.
-- SOPs can also be written in YAML; `sopc convert` switches between the two.
+- **Groups** in `sopc.yaml` name a set of blocks many agents share; an agent lists the group like a block.
+- **Lock a block** (`locked: true`) and the build fails unless every agent includes it.
+- **The format is checked strictly,** and every mistake is reported with its file and line. See the [SOP rules](FORMAT.md#sop-rules). SOPs can also be written in YAML; `sopc convert` switches between the two.
+- Coming from sopc v0.0.8 or earlier? `sopc migrate` converts the folder and checks every prompt stays the same.
 
 Change a shared file and see what moves before you merge:
 
@@ -136,7 +149,7 @@ Change a shared file and see what moves before you merge:
 $ sopc plan
 Comparing with origin/main (3f9a2c1)
 3 agents change:
-  base `brand-voice` edited → 3 agents: luigis-trattoria, sakura-sushi, tonys-pizza
+  instruction `brand-voice` edited → 3 agents: luigis-trattoria, sakura-sushi, tonys-pizza
   SOP `reservations` edited → 2 agents: luigis-trattoria, sakura-sushi
 
 --- a/sakura-sushi.prompt.md
@@ -157,6 +170,7 @@ sopc fmt          # Format SOP files
 sopc plan         # Show which agents your changes affect, with prompt diffs
 sopc affected     # List the agents your changes affect (for CI)
 sopc agents       # List every agent with its platform id and SOPs
+sopc migrate      # Convert a folder from sopc v0.0.8 or earlier (shows the plan; --yes writes)
 sopc verify       # Check live prompts on ElevenLabs, Vapi and Retell match the build
 ```
 
@@ -180,7 +194,7 @@ To run your own tests on just the agents a pull request changes, see the [behavi
 Agent instructions live in `sops/` in the sopc format.
 Run `sopc guide` and read it before editing anything there.
 Finish with `sopc fmt`, `sopc validate`, `sopc lint` and `sopc plan`.
-Never pass `--yes` to `sopc fmt` or `sopc convert` unless I've approved removing the comments it lists.
+Never pass `--yes` to `sopc fmt`, `sopc convert` or `sopc migrate` unless I've approved what it lists.
 ```
 
 For editor autocomplete, point `yaml-language-server` at the schemas in [`spec/`](spec).

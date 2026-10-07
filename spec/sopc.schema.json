@@ -17,19 +17,22 @@
       "title": "Variables",
       "type": "object"
     },
+    "groups": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "description": "Named, ordered sets of blocks: group name → instruction, SOP and group ids. An agent lists a group in `blocks` like a block, and it expands in place.",
+      "title": "Groups",
+      "type": "object"
+    },
     "sops_heading": {
       "default": "## Procedures",
-      "description": "Heading placed above the SOPs in each prompt.",
+      "description": "Heading placed once in each prompt, right before the first SOP. Empty for none.",
       "title": "Sops Heading",
       "type": "string"
-    },
-    "sop_order": {
-      "description": "SOP ids to place first, in this order. The rest follow alphabetically.",
-      "items": {
-        "type": "string"
-      },
-      "title": "Sop Order",
-      "type": "array"
     }
   },
   "title": "sopc.yaml",

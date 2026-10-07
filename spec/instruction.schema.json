@@ -1,0 +1,19 @@
+{
+  "additionalProperties": false,
+  "description": "Shared prompt text that isn't a procedure: identity, brand voice, context, policy. It says nothing about which agents use it; agents list it in `blocks`.\n\nWritten as instructions/<id>.md: optional YAML front matter, then the text.",
+  "properties": {
+    "id": {
+      "description": "The file name without .md. Set automatically.",
+      "title": "Id",
+      "type": "string"
+    },
+    "locked": {
+      "default": false,
+      "description": "If true, every agent must include this instruction (directly or through a group), or the build fails. Automated suggestions must leave it alone.",
+      "title": "Locked",
+      "type": "boolean"
+    }
+  },
+  "title": "sopc instruction: front matter of instructions/<id>.md",
+  "type": "object"
+}

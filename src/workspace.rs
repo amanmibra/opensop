@@ -1,7 +1,7 @@
 //! Reading a sopc folder into a [`Workspace`], and the checks that need all of it.
 
-use crate::model::{self, Agent, Base, Config, Sop, Targeting};
-use crate::render::{find_variables, resolve_bases, resolve_sops, sop_payload};
+use crate::model::{self, Block, Config, Instruction, Sop};
+use crate::render::{expand, find_variables, sop_payload};
 use crate::text::user_path;
 use serde_yaml_ng::{Mapping, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -62,24 +62,29 @@ impl std::error::Error for Issues {}
 #[derive(Debug, Default)]
 pub struct Workspace {
     pub config: Config,
-    pub bases: Vec<Base>,
+    pub instructions: Vec<Instruction>,
     pub sops: Vec<Sop>,
-    pub agents: Vec<Agent>,
+    pub agents: Vec<model::Agent>,
     /// Warnings found while reading files (e.g. an empty Markdown section).
     pub warnings: Vec<Issue>,
 }
 
 impl Workspace {
-    pub fn base(&self, id: &str) -> Option<&Base> {
-        self.bases.iter().find(|b| b.id == id)
+    pub fn instruction(&self, id: &str) -> Option<&Instruction> {
+        self.instructions.iter().find(|b| b.id == id)
     }
     pub fn sop(&self, id: &str) -> Option<&Sop> {
         self.sops.iter().find(|s| s.id == id)
     }
+    /// The instruction or SOP with this id (an SOP wins if both exist, which is an error anyway).
+    pub fn block(&self, id: &str) -> Option<Block> {
+        let sop = self.sop(id).map(|s| Block::Sop(s.clone()));
+        sop.or_else(|| self.instruction(id).map(|i| Block::Instruction(i.clone())))
+    }
 }
 
-pub fn base_path(id: &str) -> String {
-    format!("bases/{id}.md")
+pub fn instruction_path(id: &str) -> String {
+    format!("instructions/{id}.md")
 }
 pub fn agent_path(id: &str) -> String {
     format!("agents/{id}.yaml")
@@ -91,12 +96,16 @@ pub const CONFIG: &str = "sopc.yaml";
 /// how to migrate, and so `--against` a ref from before the rename still builds.
 pub const LEGACY_CONFIG: &str = "opensop.yaml";
 
+/// The folder instructions were kept in before `sopc migrate`. Read only to say how to migrate,
+/// and so `--against` a ref from before the change still builds.
+pub const OLD_INSTRUCTIONS: &str = "bases";
+
 /// Whether a path (relative to the root, with `/`) is a sopc source file.
 pub fn is_source(rel: &str) -> bool {
     let (folder, name) = rel.rsplit_once('/').unwrap_or(("", rel));
     rel == CONFIG
         || rel == LEGACY_CONFIG
-        || (folder == "bases" && name.ends_with(".md"))
+        || ((folder == "instructions" || folder == OLD_INSTRUCTIONS) && name.ends_with(".md"))
         || (folder == "procedures" && (name.ends_with(".yaml") || name.ends_with(".md")))
         || (folder == "agents" && name.ends_with(".yaml"))
 }
@@ -126,7 +135,7 @@ pub fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
 /// The source files of a folder, keyed by path relative to it.
 pub fn read_files(root: &Path) -> anyhow::Result<BTreeMap<String, String>> {
     let mut files = BTreeMap::new();
-    for folder in ["", "bases", "procedures", "agents"] {
+    for folder in ["", "instructions", OLD_INSTRUCTIONS, "procedures", "agents"] {
         let Ok(entries) = std::fs::read_dir(root.join(folder)) else { continue };
         for entry in entries {
             let entry = entry?;
@@ -144,7 +153,7 @@ pub fn load(root: &Path) -> anyhow::Result<Workspace> {
     Ok(load_files(&read_files(root)?)?)
 }
 
-/// The file name without its extension (`bases/brand-voice.md` → `brand-voice`).
+/// The file name without its extension (`instructions/brand-voice.md` → `brand-voice`).
 pub fn stem(path: &str) -> &str {
     let name = path.rsplit('/').next().unwrap_or(path);
     match name.rfind('.') {
@@ -163,7 +172,21 @@ pub fn missing_config(files: &BTreeMap<String, String>) -> Issues {
     Issues(vec![Issue::error("missing_config", "", message)])
 }
 
-/// Parses an in-memory file map (relative path → text).
+/// The error for a field of the format before `sopc migrate`.
+pub fn old_format(path: &str, what: &str) -> Issue {
+    let msg = format!("{what} is from the old format; run `sopc migrate` to convert this folder");
+    Issue::error("old_format", path, msg)
+}
+
+/// Reports fields of the old format in a file's mapping (or a Markdown file's front matter).
+fn old_fields(map: &Mapping, fields: &[&str], path: &str, issues: &mut Vec<Issue>) {
+    for field in fields.iter().filter(|f| map.contains_key(**f)) {
+        issues.push(old_format(path, &format!("`{field}`")));
+    }
+}
+
+/// Parses an in-memory file map (relative path → text). A folder in the format before
+/// `sopc migrate` fails with `old_format` errors only.
 pub fn load_files(files: &BTreeMap<String, String>) -> Result<Workspace, Issues> {
     let Some(config_text) = files.get(CONFIG) else {
         return Err(missing_config(files));
@@ -171,6 +194,7 @@ pub fn load_files(files: &BTreeMap<String, String>) -> Result<Workspace, Issues>
     let mut issues = vec![];
     let mut ws = Workspace::default();
     if let Some(map) = load_yaml(config_text, CONFIG, &mut issues) {
+        old_fields(&map, model::OLD_CONFIG_FIELDS, CONFIG, &mut issues);
         match model::parse_config(&map) {
             Ok(config) => ws.config = config,
             Err(errs) => field_errors(errs, CONFIG, &mut issues),
@@ -179,13 +203,17 @@ pub fn load_files(files: &BTreeMap<String, String>) -> Result<Workspace, Issues>
     let in_folder = |folder: &'static str| {
         files.iter().filter(move |(p, _)| p.starts_with(folder) && p[folder.len()..].starts_with('/'))
     };
-    for (path, text) in in_folder("bases") {
+    if in_folder(OLD_INSTRUCTIONS).next().is_some() {
+        issues.push(old_format(OLD_INSTRUCTIONS, "the bases/ folder (now instructions/)"));
+    }
+    for (path, text) in in_folder("instructions") {
         let (meta, body) = split_front_matter(text);
         let Some(mut map) = load_yaml(meta, path, &mut issues) else { continue };
+        old_fields(&map, model::OLD_INSTRUCTION_FIELDS, path, &mut issues);
         set_id(&mut map, path, &mut issues);
         map.insert("text".into(), body.trim().into());
-        match model::parse_base(&map) {
-            Ok(base) => ws.bases.push(base),
+        match model::parse_instruction(&map) {
+            Ok(instruction) => ws.instructions.push(instruction),
             Err(errs) => field_errors(errs, path, &mut issues),
         }
     }
@@ -206,11 +234,16 @@ pub fn load_files(files: &BTreeMap<String, String>) -> Result<Workspace, Issues>
     }
     for (path, text) in in_folder("agents") {
         let Some(mut map) = load_yaml(text, path, &mut issues) else { continue };
+        old_fields(&map, model::OLD_AGENT_FIELDS, path, &mut issues);
         set_id(&mut map, path, &mut issues);
         match model::parse_agent(&map) {
             Ok(agent) => ws.agents.push(agent),
             Err(errs) => field_errors(errs, path, &mut issues),
         }
+    }
+    if issues.iter().any(|i| i.code == "old_format") {
+        // The rest follows from the old format (e.g. "unknown field"); migrating fixes it.
+        issues.retain(|i| i.code == "old_format");
     }
     if issues.is_empty() {
         Ok(ws)
@@ -229,6 +262,9 @@ pub fn parse_sop_file(path: &str, text: &str) -> Result<(Sop, Vec<Issue>), Vec<I
         load_yaml(text, path, &mut issues).filter(|map| check_steps(map, path, &mut issues))
     };
     let Some(mut map) = map else { return Err(issues) };
+    if !markdown {
+        old_fields(&map, model::OLD_SOP_FIELDS, path, &mut issues);
+    }
     set_id(&mut map, path, &mut issues);
     let no_steps = match map.get("procedureSteps") {
         None | Some(Value::Null) => true,
@@ -350,18 +386,19 @@ pub fn export(ws: &Workspace) -> serde_json::Value {
     }
     let vars: serde_json::Map<String, serde_json::Value> =
         ws.config.variables.0.iter().map(|(k, v)| (k.clone(), v.clone().into())).collect();
+    let groups: serde_json::Map<String, serde_json::Value> =
+        ws.config.groups.iter().map(|(k, v)| (k.clone(), serde_json::json!(v))).collect();
     let agents = ws.agents.iter().map(|a| {
         let mut v = with_file(a.canonical_json(), agent_path(&a.id));
         let obj = v.as_object_mut().unwrap();
-        // canonical_json leaves retell out when unset (to keep old hashes); export always has it.
-        obj.entry("retell").or_insert(serde_json::Value::Null);
         obj.insert("platform".into(), a.platform().into());
         obj.insert("platform_id".into(), a.platform_id().into());
         v
     });
+    let instructions = ws.instructions.iter().map(|i| with_file(i.canonical_json(), instruction_path(&i.id)));
     serde_json::json!({
-        "config": {"variables": vars, "sops_heading": ws.config.sops_heading, "sop_order": ws.config.sop_order},
-        "bases": ws.bases.iter().map(|b| with_file(b.canonical_json(), base_path(&b.id))).collect::<Vec<_>>(),
+        "config": {"variables": vars, "groups": groups, "sops_heading": ws.config.sops_heading},
+        "instructions": instructions.collect::<Vec<_>>(),
         "sops": ws.sops.iter().map(|s| with_file(s.canonical_json(), s.file.clone())).collect::<Vec<_>>(),
         "agents": agents.collect::<Vec<_>>(),
     })
@@ -369,23 +406,18 @@ pub fn export(ws: &Workspace) -> serde_json::Value {
 
 // --- whole-workspace checks ----------------------------------------------------------------------
 
-/// Whether a base or SOP applies to the agent through its own `agents:` field.
-pub fn targets(t: &Targeting, agent: &Agent) -> bool {
-    let names = [agent.id.clone(), agent.platform_ref()];
-    if t.exclude.iter().any(|x| names.contains(x)) {
-        return false;
-    }
-    t.all || t.agents.iter().any(|x| names.contains(x))
-}
-
-/// References, cycles, locks and variables.
+/// Ids, groups, locks and variables.
 pub fn validate(ws: &Workspace) -> Vec<Issue> {
     let mut issues = ws.warnings.clone();
-    let agent_names: BTreeSet<String> = ws.agents.iter().flat_map(|a| [a.id.clone(), a.platform_ref()]).collect();
 
-    let base_ids: BTreeSet<&str> = ws.bases.iter().map(|b| b.id.as_str()).collect();
-    for sop in ws.sops.iter().filter(|s| base_ids.contains(s.id.as_str())).map(|s| &s.id).collect::<BTreeSet<_>>() {
-        issues.push(Issue::error("duplicate_id", "", format!("'{sop}' is both a base and an SOP; ids must be unique")));
+    let instruction_ids: BTreeSet<&str> = ws.instructions.iter().map(|b| b.id.as_str()).collect();
+    for sop in ws.sops.iter().filter(|s| instruction_ids.contains(s.id.as_str())) {
+        let msg = format!("'{}' is both an instruction and an SOP; ids must be unique", sop.id);
+        issues.push(Issue::error("duplicate_id", "", msg));
+    }
+    for (name, _) in ws.config.groups.iter().filter(|(n, _)| ws.block(n).is_some()) {
+        let msg = format!("group '{name}' has the same name as an instruction or SOP; names must be unique");
+        issues.push(Issue::error("duplicate_id", CONFIG, msg));
     }
 
     let mut seen_refs: BTreeMap<String, &str> = BTreeMap::new();
@@ -401,34 +433,13 @@ pub fn validate(ws: &Workspace) -> Vec<Issue> {
         seen_refs.insert(r, &a.id);
     }
 
-    let blocks = ws
-        .bases
-        .iter()
-        .map(|b| (base_path(&b.id), &b.targeting))
-        .chain(ws.sops.iter().map(|s| (s.file.clone(), &s.targeting)));
-    for (path, t) in blocks {
-        let listed = if t.all { &[][..] } else { &t.agents[..] };
-        for (field, names) in [("agents", listed), ("exclude", &t.exclude[..])] {
-            for name in names.iter().filter(|n| !agent_names.contains(*n)) {
-                issues.push(Issue::error(
-                    "unknown_agent",
-                    &path,
-                    format!("{field} lists '{name}', which is not a known agent"),
-                ));
-            }
+    for (name, members) in &ws.config.groups {
+        for id in members.iter().filter(|id| ws.block(id).is_none() && ws.config.group(id).is_none()) {
+            let msg = format!("group '{name}' lists '{id}', which is not an instruction, SOP or group");
+            issues.push(Issue::error("unknown_block", CONFIG, msg));
         }
     }
-
-    for b in &ws.bases {
-        for parent in b.inherits.iter().filter(|p| ws.base(p).is_none()) {
-            issues.push(Issue::error(
-                "unknown_base",
-                &base_path(&b.id),
-                format!("inherits '{parent}', which is not a base"),
-            ));
-        }
-    }
-    issues.extend(inheritance_cycles(ws));
+    issues.extend(group_cycles(ws));
 
     for s in ws.sops.iter().filter(|s| s.description.trim().is_empty()) {
         issues.push(Issue::warning(
@@ -437,52 +448,48 @@ pub fn validate(ws: &Workspace) -> Vec<Issue> {
             "no description (goal); QA can't judge whether the goal was met",
         ));
     }
-    for id in ws.config.sop_order.iter().filter(|id| ws.sop(id).is_none()) {
-        issues.push(Issue::error("unknown_sop", CONFIG, format!("sop_order lists '{id}', which is not an SOP")));
-    }
 
+    if issues.iter().any(|i| !i.warning && i.path == CONFIG) {
+        return issues; // expanding broken groups would be misleading
+    }
+    let mut used = BTreeSet::new();
     for agent in &ws.agents {
         let path = agent_path(&agent.id);
-        for id in agent.inherits.iter().filter(|id| ws.base(id).is_none()) {
-            issues.push(Issue::error("unknown_base", &path, format!("inherits '{id}', which is not a base")));
-        }
-        for id in &agent.exclude {
-            // An SOP wins over a base with the same id.
-            let block =
-                ws.sop(id).map(|s| (&s.targeting, s.locked)).or_else(|| ws.base(id).map(|b| (&b.targeting, b.locked)));
-            match block {
-                None => issues.push(Issue::error(
-                    "unknown_block",
-                    &path,
-                    format!("exclude lists '{id}', which is not a base or SOP"),
-                )),
-                Some((t, locked)) if targets(t, agent) => {
-                    if locked {
-                        issues.push(Issue::error("locked", &path, format!("can't exclude '{id}': it is locked")));
-                    }
-                }
-                Some(_) => issues.push(Issue::warning(
-                    "useless_exclude",
-                    &path,
-                    format!("exclude lists '{id}', which doesn't target this agent"),
-                )),
+        let before = issues.len();
+        let ids = expand(ws, &agent.blocks, &path, &mut issues);
+        used.extend(ids.iter().cloned());
+        let locked = ws.instructions.iter().filter(|i| i.locked).map(|i| &i.id);
+        for id in locked.chain(ws.sops.iter().filter(|s| s.locked).map(|s| &s.id)) {
+            if !ids.contains(id) {
+                let msg = format!(
+                    "'{id}' is locked, so every agent must include it; add it to blocks (directly or through a group)"
+                );
+                issues.push(Issue::error("locked", &path, msg));
             }
         }
-
-        if issues.iter().any(|i| i.code == "unknown_base" || i.code == "inheritance_cycle") {
-            continue; // resolving bases would be misleading
+        if issues.len() > before {
+            continue;
         }
-        let mut used = BTreeSet::new();
-        for b in resolve_bases(ws, agent) {
-            used.extend(find_variables(&b.text));
-        }
-        used.extend(find_variables(&agent.instructions));
-        for s in resolve_sops(ws, agent) {
-            for_each_string(&sop_payload(s), &mut |text| used.extend(find_variables(text)));
+        let mut names = find_variables(&agent.context);
+        for block in ids.iter().filter_map(|id| ws.block(id)) {
+            match block {
+                Block::Instruction(i) => names.extend(find_variables(&i.text)),
+                Block::Sop(s) => for_each_string(&sop_payload(&s), &mut |text| names.extend(find_variables(text))),
+            }
         }
         let values = ws.config.variables.merged(&agent.variables);
-        for name in used.iter().filter(|n| values.get(n).is_none()) {
+        for name in names.iter().filter(|n| values.get(n).is_none()) {
             issues.push(Issue::error("unset_variable", &path, format!("'{{{{{name}}}}}' is used but has no value")));
+        }
+    }
+    if !ws.agents.is_empty() {
+        let files = ws.instructions.iter().map(|i| (&i.id, instruction_path(&i.id), "instruction"));
+        for (id, path, kind) in files.chain(ws.sops.iter().map(|s| (&s.id, s.file.clone(), "SOP"))) {
+            if !used.contains(id) {
+                let msg =
+                    format!("no agent uses this {kind}; add '{id}' to an agent's blocks or a group, or delete it");
+                issues.push(Issue::warning("unused_block", &path, msg));
+            }
         }
     }
     issues
@@ -497,7 +504,8 @@ pub fn for_each_string(v: &serde_json::Value, f: &mut dyn FnMut(&str)) {
     }
 }
 
-fn inheritance_cycles(ws: &Workspace) -> Vec<Issue> {
+/// Groups that contain themselves, directly or through other groups.
+fn group_cycles(ws: &Workspace) -> Vec<Issue> {
     fn walk(
         ws: &Workspace,
         id: &str,
@@ -508,24 +516,22 @@ fn inheritance_cycles(ws: &Workspace) -> Vec<Issue> {
         if let Some(i) = stack.iter().position(|s| s == id) {
             let cycle = &stack[i..];
             if reported.insert(cycle.iter().cloned().collect()) {
-                let message = format!("{} → {id}", cycle.join(" → "));
-                out.push(Issue::error("inheritance_cycle", &base_path(&cycle[0]), message));
+                let message = format!("groups contain each other in a loop: {} → {id}", cycle.join(" → "));
+                out.push(Issue::error("group_cycle", CONFIG, message));
             }
             return;
         }
-        if let Some(base) = ws.base(id) {
+        if let Some(members) = ws.config.group(id) {
             stack.push(id.to_string());
-            for parent in &base.inherits {
-                walk(ws, parent, stack, reported, out);
+            for m in members {
+                walk(ws, m, stack, reported, out);
             }
             stack.pop();
         }
     }
-    let mut ids: Vec<&str> = ws.bases.iter().map(|b| b.id.as_str()).collect();
-    ids.sort();
     let (mut reported, mut out) = (BTreeSet::new(), vec![]);
-    for id in ids {
-        walk(ws, id, &mut vec![], &mut reported, &mut out);
+    for (name, _) in &ws.config.groups {
+        walk(ws, name, &mut vec![], &mut reported, &mut out);
     }
     out
 }

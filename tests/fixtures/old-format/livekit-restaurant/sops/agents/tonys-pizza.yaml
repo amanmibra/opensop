@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../../../../../spec/agent.schema.json
+#
+# One file per voice agent. The file name (tonys-pizza) is its id in sopc.
+
+livekit: tonys-pizza            # the LiveKit agent_name; exactly one of livekit | vapi | elevenlabs | retell
+inherits: [pizza-context]       # bases to include; pizza-context brings restaurant-host with it
+
+variables:                      # fill {{placeholders}} in every block this agent uses
+  restaurant_name: Tony's Pizza
+  menu_allergen_link: tonys.com/allergens
+
+# Text only this agent gets. Rendered after the top bases, before the SOPs.
+instructions: |
+  Tony's is a wood-fired pizza shop in Brooklyn. Pickup only after 10pm. Cash and card.

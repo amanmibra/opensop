@@ -89,12 +89,12 @@ fn compile_check_and_plan() {
     let (dir, root) = git_repo();
     run(0, &["--dir", &root]);
     run(0, &["--dir", &root, "--check"]);
-    edit(&Path::new(&root).join("bases/closing.md"), "repeat the order total", "repeat the order and total");
+    edit(&Path::new(&root).join("instructions/closing.md"), "repeat the order total", "repeat the order and total");
     let out = run(1, &["--dir", &root, "--check"]);
     assert!(out.stderr.contains("is out of date; run `sopc`"), "{}", out.stderr);
     // No --against: compares with main, the only branch.
     let out = sopc_in(dir.path(), &["plan", "--summary"], &[]);
-    assert!(out.stdout.contains("base `closing` edited → 3 agents"), "{}", out.stdout);
+    assert!(out.stdout.contains("instruction `closing` edited → 3 agents"), "{}", out.stdout);
 }
 
 #[test]
@@ -242,13 +242,13 @@ fn plan_and_affected_say_what_they_compared_with() {
 fn default_ref_prefers_origin_head_and_explicit_against_wins() {
     let (dir, root) = git_repo();
     git(dir.path(), &["branch", "trunk"]);
-    edit(&Path::new(&root).join("bases/closing.md"), "repeat the order total", "repeat the order and total");
+    edit(&Path::new(&root).join("instructions/closing.md"), "repeat the order total", "repeat the order and total");
     git(dir.path(), &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "edit"]);
     // main is HEAD now: no change against it.
     let out = sopc_in(dir.path(), &["plan", "--summary"], &[]);
     assert!(out.stdout.contains("No agent prompts change."), "{}", out.stdout);
     let out = sopc_in(dir.path(), &["plan", "--summary", "--against", "trunk"], &[]);
-    assert!(out.stdout.contains("base `closing` edited → 3 agents"), "{}", out.stdout);
+    assert!(out.stdout.contains("instruction `closing` edited → 3 agents"), "{}", out.stdout);
     // origin/HEAD, when set, comes before main.
     git(dir.path(), &["update-ref", "refs/remotes/origin/trunk", "trunk"]);
     git(dir.path(), &["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk"]);
@@ -300,14 +300,14 @@ fn plan_against_a_ref_from_before_the_rename() {
 #[test]
 fn validate_reports_errors() {
     let (dir, root) = repo();
-    edit(&Path::new(&root).join("agents/tonys-pizza.yaml"), "inherits: [pizza-context]", "inherits: [nope]");
+    edit(&Path::new(&root).join("agents/tonys-pizza.yaml"), "  - pizza-context\n", "  - nope\n  - pizza-context\n");
     let out = run(1, &["validate", "--dir", &root]);
-    assert!(out.stderr.contains("agents/tonys-pizza.yaml: error [unknown_base]"), "{}", out.stderr);
+    assert!(out.stderr.contains("agents/tonys-pizza.yaml: error [unknown_block]"), "{}", out.stderr);
     assert_eq!(out.stdout, "1 error(s), 0 warning(s)\n");
     let out = run(1, &["validate", "--dir", &root, "--json"]);
     let report: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
     assert_eq!(report["valid"], false);
-    assert_eq!(report["issues"][0]["code"], "unknown_base");
+    assert_eq!(report["issues"][0]["code"], "unknown_block");
     assert_eq!(report["issues"][0]["path"], "agents/tonys-pizza.yaml");
     // Files that don't parse are reported the same way.
     std::fs::write(Path::new(&root).join("agents/broken.yaml"), "livekit: [").unwrap();
@@ -319,7 +319,7 @@ fn validate_reports_errors() {
     for args in [&["validate"][..], &["agents"], &[]] {
         let out = sopc_in(dir.path(), args, &[]);
         assert!(
-            out.stderr.starts_with("sops/agents/tonys-pizza.yaml: error [unknown_base]"),
+            out.stderr.starts_with("sops/agents/tonys-pizza.yaml: error [unknown_block]"),
             "{args:?}: {}",
             out.stderr
         );
@@ -422,7 +422,7 @@ fn fmt_check_exit_codes() {
     assert_eq!(read(&file), messy, "--check writes nothing");
     let out = sopc_in(&Path::new(&root).join("procedures"), &["fmt", "-C", "..", "--yaml"], &[]);
     assert!(out.stdout.starts_with("formatted ../procedures/reservations.yaml\n"), "{}", out.stdout);
-    assert!(read(&file).starts_with("name: Reservations\nagents:"));
+    assert!(read(&file).starts_with("name: Reservations\ndescription:"));
     run(0, &["fmt", "--dir", &root, "--check", "--yaml"]);
     std::fs::write(Path::new(&root).join("procedures/broken.md"), "# Broken\n## Notes\n").unwrap();
     let out = sopc_in(dir.path(), &["fmt"], &[]);
@@ -454,8 +454,13 @@ fn printed_docs_link_absolutely() {
 #[test]
 fn format_reference_lists_every_validation_code() {
     let guide = read(&repo_root().join("FORMAT.md"));
-    let source = ["workspace.rs", "sopfile.rs"].map(|f| read(&repo_root().join("src").join(f))).join("\n");
-    let re = regex::Regex::new(r#"(?:Issue::(?:error|warning)\(|r\.(?:error|warning)\([^"]*?)\s*"([a-z_]+)""#).unwrap();
+    let source = ["workspace.rs", "sopfile.rs", "migrate.rs", "render.rs"]
+        .map(|f| read(&repo_root().join("src").join(f)))
+        .join("\n");
+    let re = regex::Regex::new(
+        r#"(?:Issue::(?:error|warning)\(|r\.(?:error|warning)\([^"]*?|fn failed[^"]*?)\s*"([a-z_]+)""#,
+    )
+    .unwrap();
     let codes: std::collections::BTreeSet<&str> =
         re.captures_iter(&source).map(|c| c.get(1).unwrap().as_str()).collect();
     assert_eq!(codes.len(), 34, "{codes:?}");
@@ -493,6 +498,11 @@ fn plan_json_and_agents_json() {
     let sakura = agents.as_array().unwrap().iter().find(|a| a["id"] == "sakura-sushi").unwrap();
     assert_eq!(sakura["platform_id"], "sakura-sushi");
     assert_eq!(sakura["sops"], serde_json::json!(["allergen-check", "reservations"]));
+    assert_eq!(sakura["instructions"], serde_json::json!(["restaurant-host", "brand-voice", "closing"]));
+    assert_eq!(
+        sakura["blocks"],
+        serde_json::json!(["restaurant-host", "brand-voice", "allergen-check", "reservations", "closing"])
+    );
     let tonys = agents.as_array().unwrap().iter().find(|a| a["id"] == "tonys-pizza").unwrap();
     assert!(tonys["tools"].as_array().unwrap().contains(&serde_json::json!("transfer_to_staff")));
 }
@@ -630,14 +640,15 @@ fn argument_errors_exit_2() {
 fn export_prints_every_block_as_json() {
     let (_dir, root) = repo();
     let out: serde_json::Value = serde_json::from_str(&run(0, &["export", "--dir", &root]).stdout).unwrap();
-    assert_eq!(out["config"]["sop_order"], serde_json::json!(["allergen-check"]));
+    assert_eq!(out["config"]["groups"], serde_json::json!({}));
     assert_eq!(out["config"]["sops_heading"], "## Procedures");
     assert_eq!(out["config"]["variables"]["staff_transfer"], "the manager on duty");
-    let base = out["bases"].as_array().unwrap().iter().find(|b| b["id"] == "brand-voice").unwrap();
-    assert_eq!(base["file"], "bases/brand-voice.md");
-    assert_eq!(base["agents"], "*");
-    assert_eq!(base["locked"], true);
-    assert_eq!(base["position"], "top");
+    let instruction = out["instructions"].as_array().unwrap().iter().find(|b| b["id"] == "brand-voice").unwrap();
+    assert_eq!(
+        instruction,
+        &serde_json::json!({"id": "brand-voice", "locked": true, "file": "instructions/brand-voice.md",
+            "text": "Speak warmly and briefly. Ask one question at a time. Never upsell more than once per call."})
+    );
     let sop = out["sops"].as_array().unwrap().iter().find(|s| s["id"] == "allergen-check").unwrap();
     assert_eq!(sop["file"], "procedures/allergen-check.yaml");
     assert_eq!(sop["procedureSteps"][0], "Ask if anyone in the order has a food allergy");
@@ -649,7 +660,11 @@ fn export_prints_every_block_as_json() {
     assert_eq!(agent["platform"], "livekit");
     assert_eq!(agent["platform_id"], "sakura-sushi");
     assert_eq!(agent["retell"], serde_json::Value::Null);
-    assert_eq!(agent["exclude"], serde_json::json!(["delivery-handling"]));
+    assert_eq!(
+        agent["blocks"],
+        serde_json::json!(["restaurant-host", "brand-voice", "allergen-check", "reservations", "closing"])
+    );
+    assert!(agent["context"].as_str().unwrap().starts_with("Sakura is an omakase"));
     let vars: Vec<&String> = agent["variables"].as_object().unwrap().keys().collect();
     assert_eq!(vars, ["restaurant_name", "menu_allergen_link", "staff_transfer"]); // in file order
 
@@ -665,10 +680,14 @@ fn export_prints_every_block_as_json() {
     let out: serde_json::Value = serde_json::from_str(&run(1, &["export", "--dir", &root]).stdout).unwrap();
     assert_eq!(out["valid"], false);
     assert_eq!(out["issues"][0]["path"], "agents/broken.yaml");
-    // Only parsing matters: a reference to a missing base is validate's business.
+    // Only parsing matters: a reference to a missing block is validate's business.
     std::fs::remove_file(Path::new(&root).join("agents/broken.yaml")).unwrap();
-    edit(&Path::new(&root).join("agents/tonys-pizza.yaml"), "inherits: [pizza-context]", "inherits: [nope]");
+    edit(&Path::new(&root).join("agents/tonys-pizza.yaml"), "  - pizza-context\n", "  - nope\n");
     run(0, &["export", "--dir", &root]);
+    // Groups, in order.
+    edit(&Path::new(&root).join("sopc.yaml"), "version: 1\n", "version: 1\ngroups:\n  b: [closing]\n  a: [b]\n");
+    let out: serde_json::Value = serde_json::from_str(&run(0, &["export", "--dir", &root]).stdout).unwrap();
+    assert_eq!(out["config"]["groups"].to_string(), r#"{"b":["closing"],"a":["b"]}"#);
 }
 
 #[test]
@@ -680,7 +699,7 @@ fn help_has_examples_and_docs_links() {
     assert!(!run(0, &["-h"]).stdout.contains("Examples:"));
     for cmd in [
         "validate", "lint", "fmt", "plan", "affected", "agents", "export", "convert", "overlap", "compare", "verify",
-        "skills", "guide",
+        "migrate", "skills", "guide",
     ] {
         let link = format!("Docs: {docs}#sopc-{cmd}\n");
         let long = run(0, &[cmd, "--help"]).stdout;
@@ -733,4 +752,109 @@ fn rewrites_that_would_remove_comments_need_yes() {
     run(0, &["fmt", "--dir", &root, "--yaml", "-y"]);
     assert!(!read(&file).contains("# ask first"));
     run(0, &["fmt", "--dir", &root, "--yaml", "--check"]);
+}
+
+/// A temp folder holding a copy of an old-format fixture's sops/.
+fn old_repo(name: &str) -> (tempfile::TempDir, String) {
+    let dir = tempfile::tempdir().unwrap();
+    copy_dir(&repo_root().join("tests/fixtures/old-format").join(name).join("sops"), &dir.path().join("sops"));
+    let root = dir.path().join("sops").to_string_lossy().into_owned();
+    (dir, root)
+}
+
+fn tree(root: &Path) -> std::collections::BTreeMap<String, String> {
+    let mut out = std::collections::BTreeMap::new();
+    for folder in ["", "bases", "instructions", "procedures", "agents"] {
+        let Ok(entries) = std::fs::read_dir(root.join(folder)) else { continue };
+        for e in entries {
+            let p = e.unwrap().path();
+            if p.is_file() {
+                out.insert(p.strip_prefix(root).unwrap().to_string_lossy().into_owned(), read(&p));
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn old_format_says_to_run_migrate() {
+    let (dir, _) = old_repo("restaurants");
+    let out = sopc_in(dir.path(), &["validate"], &[]);
+    assert_eq!(out.code, 1);
+    assert!(out.stderr.contains("sops/bases: error [old_format] the bases/ folder (now instructions/) is from the old format; run `sopc migrate` to convert this folder"), "{}", out.stderr);
+    assert!(
+        out.stderr.contains("sops/agents/tonys-pizza.yaml: error [old_format] `inherits` is from the old format"),
+        "{}",
+        out.stderr
+    );
+    assert!(!out.stderr.contains("[invalid_field]"), "only old_format errors: {}", out.stderr);
+    assert_eq!(sopc_in(dir.path(), &[], &[]).code, 1);
+}
+
+#[test]
+fn migrate_shows_the_plan_then_writes_with_yes() {
+    let (dir, root) = old_repo("livekit-restaurant");
+    let before = tree(Path::new(&root));
+    let out = sopc_in(dir.path(), &["migrate"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    for line in [
+        "Migrating sops to the current format (13 file(s) change):\n",
+        "  sops/bases/closing.md → sops/instructions/closing.md: removed agents, position\n",
+        "  sops/agents/tonys-pizza.yaml: instructions → context; removed inherits; blocks: restaurant-host, pizza-context, brand-voice, allergen-check, delivery-handling, closing\n",
+        "  sops/sopc.yaml: removed sop_order\n",
+        "warning: `brand-voice` was locked, but not every agent uses it (not: la-casita); a locked block must be in every agent, so its lock is removed\n",
+        "Comments that go with removed fields:\n  sops/sopc.yaml\n    line 14: # SOPs listed here come first, in this order. Unlisted SOPs follow alphabetically.\n",
+        "Checked: all 4 agent prompt(s) stay the same, except each agent's own text (now `context`) moves to the top.\n",
+        "Nothing written. Rerun with --yes to write these changes.\n",
+    ] {
+        assert!(out.stdout.contains(line), "missing {line:?} in:\n{}", out.stdout);
+    }
+    assert_eq!(tree(Path::new(&root)), before, "a dry run writes nothing");
+
+    let out = sopc_in(dir.path(), &["migrate", "--yes"], &[]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(out.stdout.contains("Wrote 13 file(s). Verified on disk: 4 agent prompt(s) match.\n"), "{}", out.stdout);
+    assert!(!Path::new(&root).join("bases").exists());
+    let names = std::fs::read_dir(Path::new(&root).join("instructions")).unwrap();
+    assert!(names.map(|e| e.unwrap().file_name()).all(|n| !n.to_string_lossy().starts_with('.')), "no temp files");
+    let out = run_ok(dir.path(), &["validate"]);
+    assert_eq!(out.stdout, "0 error(s), 0 warning(s)\n");
+    run_ok(dir.path(), &["fmt", "--check"]);
+    assert!(read(&Path::new(&root).join("agents/la-casita.yaml")).contains("  - brand-voice-es\n"));
+    let out = run_ok(dir.path(), &["migrate"]);
+    assert_eq!(out.stdout, "sops is already in the current format; nothing to migrate\n");
+}
+
+#[test]
+fn migrated_prompts_match_the_old_build_except_the_context() {
+    let (dir, root) = old_repo("restaurants");
+    run_ok(dir.path(), &["migrate", "--yes"]);
+    let new = built(&root, &dir.path().join("out"));
+    let old = repo_root().join("tests/fixtures/old-format/restaurants/expected");
+    for (name, text) in &new {
+        let before = read(&old.join(name));
+        if name.ends_with(".tool.json") {
+            assert_eq!(text, &before, "{name}");
+            continue;
+        }
+        let context = text.split("\n\n").next().unwrap();
+        assert_eq!(text, &format!("{context}\n\n{}", before.replacen(&format!("\n\n{context}"), "", 1)), "{name}");
+    }
+    // The migrated folder is the fixture.
+    assert_eq!(tree(Path::new(&root)), tree(&fixture().join("sops")));
+}
+
+#[test]
+fn plan_against_a_ref_from_before_migrating() {
+    let (dir, root) = old_repo("restaurants");
+    git(dir.path(), &["init", "-q", "-b", "main"]);
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+    run_ok(dir.path(), &["migrate", "--yes"]);
+    // The old ref is built as migrating it would: no prompt changes.
+    let out = run(0, &["plan", "--dir", &root, "--against", "main", "--summary"]);
+    assert_eq!(out.stdout, "No agent prompts change.\n", "{}", out.stderr);
+    edit(&Path::new(&root).join("agents/sakura-sushi.yaml"), "  - reservations\n", "");
+    let out = run(0, &["plan", "--dir", &root, "--against", "main", "--summary"]);
+    assert!(out.stdout.contains("SOP `reservations` removed → 1 agent: sakura-sushi"), "{}", out.stdout);
 }

@@ -91,51 +91,166 @@ fn fixture_is_valid() {
 }
 
 #[test]
-fn locked_base_cannot_be_excluded() {
+fn locked_block_must_be_in_every_agent() {
     let r = Repo::new();
-    r.edit("agents/sakura-sushi.yaml", "exclude: [delivery-handling]", "exclude: [delivery-handling, brand-voice]");
+    r.edit("agents/sakura-sushi.yaml", "  - brand-voice\n", "");
+    let issues = render_workspace(&ws(r.root())).err().unwrap().0;
+    assert_eq!(codes(&issues), ["locked"]);
+    assert_eq!(issues[0].path, "agents/sakura-sushi.yaml");
+    assert!(
+        issues[0].message.contains("'brand-voice' is locked, so every agent must include it"),
+        "{}",
+        issues[0].message
+    );
+    // Through a group counts.
+    r.append("sopc.yaml", "\ngroups:\n  voice:\n    - brand-voice\n");
+    r.edit("agents/sakura-sushi.yaml", "  - restaurant-host\n", "  - restaurant-host\n  - voice\n");
+    assert!(build(r.root()).agents["sakura-sushi"].prompt.contains("Speak warmly"));
+    // A locked SOP too.
+    r.edit("procedures/reservations.yaml", "name: Reservations\n", "name: Reservations\nlocked: true\n");
     assert_eq!(render_codes(r.root()), ["locked"]);
 }
 
 #[test]
-fn unlocked_base_can_be_excluded() {
+fn unlocked_block_can_be_left_out() {
     let r = Repo::new();
-    r.edit("agents/sakura-sushi.yaml", "exclude: [delivery-handling]", "exclude: [delivery-handling, closing]");
-    assert!(!build(r.root()).agents["sakura-sushi"].bases.iter().any(|b| b.id == "closing"));
+    r.edit("agents/sakura-sushi.yaml", "  - closing\n", "");
+    assert!(!build(r.root()).agents["sakura-sushi"].blocks.iter().any(|b| b.id() == "closing"));
 }
 
 #[test]
-fn inheritance_cycle() {
+fn unknown_block() {
     let r = Repo::new();
-    r.edit("bases/restaurant-host.md", "---\n---", "---\ninherits: [pizza-context]\n---");
-    assert_eq!(render_codes(r.root()), ["inheritance_cycle"]);
+    r.edit("agents/tonys-pizza.yaml", "  - pizza-context\n", "  - pasta-context\n");
+    let issues = render_workspace(&ws(r.root())).err().unwrap().0;
+    assert_eq!(codes(&issues), ["unknown_block"]);
+    assert_eq!(issues[0].message, "blocks lists 'pasta-context', which is not an instruction, SOP or group");
 }
 
 #[test]
-fn unknown_base() {
+fn groups_expand_in_place_and_nest() {
     let r = Repo::new();
-    r.edit("agents/tonys-pizza.yaml", "inherits: [pizza-context]", "inherits: [pasta-context]");
-    assert_eq!(render_codes(r.root()), ["unknown_base"]);
-}
-
-#[test]
-fn unknown_agent_in_targeting() {
-    let r = Repo::new();
-    r.edit("procedures/reservations.yaml", "[sakura-sushi, luigis-trattoria]", "[sakura-sushi, luigis]");
-    assert_eq!(render_codes(r.root()), ["unknown_agent"]);
-}
-
-#[test]
-fn platform_ref_can_be_used_in_targeting() {
-    let r = Repo::new();
-    r.edit(
-        "procedures/reservations.yaml",
-        "[sakura-sushi, luigis-trattoria]",
-        r#"[sakura-sushi, "livekit:tonys-pizza"]"#,
+    r.append(
+        "sopc.yaml",
+        "\ngroups:\n  voice: [brand-voice]\n  host:\n    - restaurant-host\n    - voice\n  ordering:\n    - allergen-check\n    - delivery-handling\n",
     );
+    let before = build(r.root());
+    r.edit(
+        "agents/luigis-trattoria.yaml",
+        "  - restaurant-host\n  - brand-voice\n  - allergen-check\n  - delivery-handling\n",
+        "  - host\n  - ordering\n",
+    );
+    let after = build(r.root());
+    assert_eq!(after.agents["luigis-trattoria"].prompt, before.agents["luigis-trattoria"].prompt);
+    let ids: Vec<&str> = after.agents["luigis-trattoria"].blocks.iter().map(|b| b.id()).collect();
+    assert_eq!(
+        ids,
+        [
+            "restaurant-host",
+            "brand-voice",
+            "allergen-check",
+            "delivery-handling",
+            "large-orders",
+            "reservations",
+            "closing"
+        ]
+    );
+}
+
+#[test]
+fn group_problems() {
+    let group = |yaml: &str| {
+        let r = Repo::new();
+        r.append("sopc.yaml", &format!("\ngroups:\n{yaml}"));
+        let issues = validate(&ws(r.root()));
+        issues.into_iter().filter(|i| !i.warning).map(|i| (i.code, i.message)).collect::<Vec<_>>()
+    };
+    let cycle = group("  a: [b]\n  b: [c]\n  c: [a]\n");
+    assert_eq!(cycle.len(), 1, "{cycle:?}");
+    assert_eq!(cycle[0], ("group_cycle", "groups contain each other in a loop: a → b → c → a".to_string()));
+    assert_eq!(group("  self: [self]\n")[0].0, "group_cycle");
+    let unknown = group("  a: [brand-voice, nope]\n");
+    assert_eq!(
+        unknown,
+        [("unknown_block", "group 'a' lists 'nope', which is not an instruction, SOP or group".to_string())]
+    );
+    assert_eq!(group("  closing: [brand-voice]\n")[0].0, "duplicate_id");
+}
+
+#[test]
+fn a_block_twice_in_an_agent_is_an_error() {
+    let r = Repo::new();
+    r.append("sopc.yaml", "\ngroups:\n  core:\n    - brand-voice\n    - allergen-check\n");
+    r.edit("agents/tonys-pizza.yaml", "  - delivery-handling\n", "  - core\n  - delivery-handling\n");
+    let issues = render_workspace(&ws(r.root())).err().unwrap().0;
+    assert_eq!(codes(&issues), ["duplicate_block", "duplicate_block"]);
+    assert_eq!(
+        issues[0].message,
+        "'brand-voice' appears twice in blocks (directly and in group `core`); list each block once"
+    );
+    let r = Repo::new();
+    r.edit("agents/sakura-sushi.yaml", "  - closing\n", "  - closing\n  - closing\n");
+    assert_eq!(render_codes(r.root()), ["duplicate_block"]);
+}
+
+#[test]
+fn blocks_can_be_an_inline_list_or_a_bullet_list() {
+    let r = Repo::new();
+    let before = build(r.root());
+    r.edit(
+        "agents/sakura-sushi.yaml",
+        "blocks:\n  - restaurant-host\n  - brand-voice\n  - allergen-check\n  - reservations\n  - closing\n",
+        "blocks: [restaurant-host, brand-voice, allergen-check, reservations, closing]\n",
+    );
+    r.append("sopc.yaml", "\ngroups:\n  a: [brand-voice, closing]\n  b:\n    - brand-voice\n    - closing\n");
+    let after = build(r.root());
+    assert_eq!(after.agents["sakura-sushi"].prompt, before.agents["sakura-sushi"].prompt);
+    let w = ws(r.root());
+    assert_eq!(w.config.group("a"), w.config.group("b"));
+}
+
+#[test]
+fn unused_block_is_a_warning() {
+    let r = Repo::new();
+    r.edit("agents/sakura-sushi.yaml", "  - reservations\n", "");
+    r.edit("agents/luigis-trattoria.yaml", "  - reservations\n", "");
     let b = build(r.root());
-    assert!(b.agents["tonys-pizza"].prompt.contains("Reservations"));
-    assert!(!b.agents["luigis-trattoria"].prompt.contains("Reservations"));
+    assert_eq!(codes(&b.warnings), ["unused_block"]);
+    assert_eq!(b.warnings[0].path, "procedures/reservations.yaml");
+}
+
+#[test]
+fn old_format_fields_say_to_migrate() {
+    let check = |rel: &str, old: &str, new: &str, field: &str| {
+        let r = Repo::new();
+        r.edit(rel, old, new);
+        let issues = load_issues(r.root());
+        assert_eq!(codes(&issues), ["old_format"], "{rel}");
+        assert_eq!(issues[0].path, rel);
+        assert_eq!(
+            issues[0].message,
+            format!("{field} is from the old format; run `sopc migrate` to convert this folder")
+        );
+    };
+    check("agents/tonys-pizza.yaml", "context: |", "inherits: [pizza-context]\ncontext: |", "`inherits`");
+    check("agents/tonys-pizza.yaml", "context: |", "exclude: [closing]\ncontext: |", "`exclude`");
+    check("agents/tonys-pizza.yaml", "context: |", "instructions: |", "`instructions`");
+    check("procedures/reservations.yaml", "name: Reservations", "name: Reservations\nagents: \"*\"", "`agents`");
+    check("procedures/reservations.yaml", "name: Reservations", "name: Reservations\nexclude: [x]", "`exclude`");
+    check("sopc.yaml", "version: 1", "version: 1\nsop_order: [allergen-check]", "`sop_order`");
+    for field in ["agents: \"*\"", "exclude: [x]", "inherits: [x]", "position: bottom"] {
+        let name = field.split(':').next().unwrap();
+        check("instructions/closing.md", "Before", &format!("---\n{field}\n---\nBefore"), &format!("`{name}`"));
+    }
+    let r = Repo::new();
+    std::fs::write(r.path("procedures/x.md"), format!("---\nagents: \"*\"\n---\n{MD_OK}")).unwrap();
+    assert_eq!(codes(&load_issues(r.root())), ["old_format"]);
+    let r = Repo::new();
+    std::fs::create_dir(r.path("bases")).unwrap();
+    std::fs::rename(r.path("instructions/closing.md"), r.path("bases/closing.md")).unwrap();
+    let issues = load_issues(r.root());
+    assert_eq!((issues[0].code, issues[0].path.as_str()), ("old_format", "bases"));
+    assert!(issues[0].message.contains("run `sopc migrate`"));
 }
 
 #[test]
@@ -295,19 +410,44 @@ fn headings(prompt: &str) -> Vec<&str> {
 }
 
 #[test]
-fn bases_render_parents_first_then_targeted_then_bottom() {
+fn context_first_then_blocks_in_list_order() {
     let b = build(&sops());
     let tonys = &b.agents["tonys-pizza"];
-    let ids: Vec<&str> = tonys.bases.iter().map(|b| b.id.as_str()).collect();
-    assert_eq!(ids, ["restaurant-host", "pizza-context", "brand-voice", "closing"]);
+    assert_eq!(tonys.instruction_ids(), ["restaurant-host", "pizza-context", "brand-voice", "closing"]);
     let at = |s: &str| tonys.prompt.find(s).unwrap();
-    assert!(at("phone host") < at("12\" and 16\"") && at("12\" and 16\"") < at("Speak warmly"));
-    assert!(at("Speak warmly") < at("wood-fired") && at("wood-fired") < at("## Procedures"));
+    assert!(tonys.prompt.starts_with("Tony's is a wood-fired pizza shop"));
+    assert!(at("wood-fired") < at("phone host") && at("phone host") < at("12\" and 16\""));
+    assert!(at("12\" and 16\"") < at("Speak warmly") && at("Speak warmly") < at("## Procedures"));
     assert!(tonys.prompt.trim_end().ends_with("pickup or delivery time."));
 }
 
 #[test]
-fn sop_targeting_order_and_exclude() {
+fn sops_heading_goes_once_before_the_first_sop() {
+    let r = Repo::new();
+    // An instruction between SOPs stays where it's listed, and the heading isn't repeated.
+    r.edit("agents/sakura-sushi.yaml", "  - reservations\n  - closing\n", "  - closing\n  - reservations\n");
+    let prompt = build(r.root()).agents["sakura-sushi"].prompt.clone();
+    assert_eq!(prompt.matches("## Procedures").count(), 1);
+    let at = |s: &str| prompt.find(s).unwrap();
+    assert!(at("## Procedures") < at("### Allergen check") && at("Before hanging up") < at("### Reservations"));
+    // An SOP first: the heading comes right after the context.
+    r.edit("agents/sakura-sushi.yaml", "  - restaurant-host\n", "");
+    r.edit("agents/sakura-sushi.yaml", "  - closing\n", "  - restaurant-host\n  - closing\n");
+    r.edit(
+        "agents/sakura-sushi.yaml",
+        "  - brand-voice\n  - allergen-check\n",
+        "  - allergen-check\n  - brand-voice\n",
+    );
+    let prompt = build(r.root()).agents["sakura-sushi"].prompt.clone();
+    assert!(prompt.starts_with("Sakura is an omakase and sushi counter in Manhattan. Reservations strongly recommended. No delivery.\n\n## Procedures\n\n### Allergen check\n"), "{prompt}");
+    // An empty heading leaves it out.
+    r.append("sopc.yaml", "\nsops_heading: \"\"\n");
+    let prompt = build(r.root()).agents["sakura-sushi"].prompt.clone();
+    assert!(!prompt.contains("## Procedures") && prompt.contains("No delivery.\n\n### Allergen check\n"), "{prompt}");
+}
+
+#[test]
+fn sops_in_list_order() {
     let b = build(&sops());
     assert_eq!(headings(&b.agents["tonys-pizza"].prompt), ["Allergen check", "Delivery", "Large orders"]);
     assert_eq!(
@@ -359,13 +499,13 @@ fn changed_agents(a: &Build, b: &Build) -> Vec<String> {
 }
 
 #[test]
-fn editing_a_shared_base_changes_every_agent_that_uses_it() {
+fn editing_a_shared_instruction_changes_every_agent_that_uses_it() {
     let r = Repo::new();
     let before = build(r.root());
-    r.edit("bases/pizza-context.md", "12\" and 16\"", "10\", 12\" and 16\"");
+    r.edit("instructions/pizza-context.md", "12\" and 16\"", "10\", 12\" and 16\"");
     let after = build(r.root());
     assert_eq!(changed_agents(&before, &after), ["tonys-pizza"]);
-    r.edit("bases/brand-voice.md", "briefly", "concisely");
+    r.edit("instructions/brand-voice.md", "briefly", "concisely");
     let last = build(r.root());
     assert_eq!(changed_agents(&after, &last), before.agents.keys().cloned().collect::<Vec<_>>());
 }
@@ -385,11 +525,11 @@ fn lock_lists_blocks_and_tools() {
         blocks,
         [
             "agent:sakura-sushi",
-            "base:restaurant-host",
-            "base:brand-voice",
-            "base:closing",
+            "instruction:restaurant-host",
+            "instruction:brand-voice",
             "sop:allergen-check",
-            "sop:reservations"
+            "sop:reservations",
+            "instruction:closing"
         ]
     );
     assert!(!sakura["tools"].as_array().unwrap().contains(&serde_json::json!("check_delivery_zone")));
@@ -424,19 +564,14 @@ fn write_build_removes_only_what_the_last_build_made() {
 
 #[test]
 fn canonical_json_follows_field_order_and_keeps_non_ascii() {
-    let base = Base { id: "b".into(), position: "top".into(), text: "Olá \"x\"\n".into(), ..Base::default() };
-    assert_eq!(
-        base.canonical_json(),
-        r#"{"agents":[],"exclude":[],"id":"b","inherits":[],"locked":false,"position":"top","text":"Olá \"x\"\n"}"#
-    );
+    let instruction = Instruction { id: "b".into(), locked: false, text: "Olá \"x\"\n".into() };
+    assert_eq!(instruction.canonical_json(), r#"{"id":"b","locked":false,"text":"Olá \"x\"\n"}"#);
     let keys = |json: String| -> Vec<String> {
         serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&json).unwrap().keys().cloned().collect()
     };
-    assert_eq!(keys(base.canonical_json()), BASE_FIELDS);
+    assert_eq!(keys(instruction.canonical_json()), INSTRUCTION_FIELDS);
     assert_eq!(keys(Sop::default().canonical_json()), SOP_FIELDS);
-    // `retell` was added later, so it's left out unless set (existing agents keep their hashes).
-    let older: Vec<&str> = AGENT_FIELDS.iter().copied().filter(|f| *f != "retell").collect();
-    assert_eq!(keys(Agent::default().canonical_json()), older);
+    assert_eq!(keys(Agent::default().canonical_json()), AGENT_FIELDS);
 }
 
 // --- plan and affected ------------------------------------------------------------------------------
@@ -453,7 +588,7 @@ fn strings(items: &[&str]) -> Vec<String> {
 fn plan_attributes_changes_to_blocks() {
     let r = Repo::new();
     let before = snapshot(&build(r.root()));
-    r.edit("bases/brand-voice.md", "briefly", "concisely");
+    r.edit("instructions/brand-voice.md", "briefly", "concisely");
     r.edit("procedures/reservations.yaml", "Never double-book a table", "Never double-book or overbook a table");
     let plan = make_plan(&before, &snapshot(&build(r.root())));
     let ids: Vec<&str> = plan.changes.iter().map(|c| c.agent.as_str()).collect();
@@ -461,23 +596,44 @@ fn plan_attributes_changes_to_blocks() {
     assert_eq!(
         groups(&plan),
         [
-            ("base:brand-voice".into(), "edited", strings(&["luigis-trattoria", "sakura-sushi", "tonys-pizza"])),
+            ("instruction:brand-voice".into(), "edited", strings(&["luigis-trattoria", "sakura-sushi", "tonys-pizza"])),
             ("sop:reservations".into(), "edited", strings(&["luigis-trattoria", "sakura-sushi"])),
         ]
     );
-    assert!(plan.text(true).contains("base `brand-voice` edited → 3 agents"));
+    assert!(plan.text(true).contains("instruction `brand-voice` edited → 3 agents"));
     assert!(plan.changes[0].diff.contains("-Speak warmly and briefly."));
     assert!(plan.changes[0].diff.contains("+Speak warmly and concisely."));
 }
 
 #[test]
-fn plan_reports_targeting_changes() {
+fn plan_reports_blocks_an_agent_adds_or_removes() {
     let r = Repo::new();
     let before = snapshot(&build(r.root()));
-    r.edit("procedures/reservations.yaml", "[sakura-sushi, luigis-trattoria]", "[sakura-sushi]");
+    r.edit("agents/luigis-trattoria.yaml", "  - reservations\n", "");
+    r.edit("agents/sakura-sushi.yaml", "  - closing\n", "  - closing\n  - pizza-context\n");
     let plan = make_plan(&before, &snapshot(&build(r.root())));
-    assert_eq!(groups(&plan), [("sop:reservations".into(), "removed", strings(&["luigis-trattoria"]))]);
-    assert!(plan.summary().contains(&"SOP `reservations` no longer applies → 1 agent: luigis-trattoria".to_string()));
+    assert_eq!(
+        groups(&plan),
+        [
+            ("agent:luigis-trattoria".into(), "edited", strings(&["luigis-trattoria"])),
+            ("agent:sakura-sushi".into(), "edited", strings(&["sakura-sushi"])),
+            ("instruction:pizza-context".into(), "added", strings(&["sakura-sushi"])),
+            ("sop:reservations".into(), "removed", strings(&["luigis-trattoria"])),
+        ]
+    );
+    assert!(plan.summary().contains(&"SOP `reservations` removed → 1 agent: luigis-trattoria".to_string()));
+    assert!(plan.summary().contains(&"instruction `pizza-context` added → 1 agent: sakura-sushi".to_string()));
+}
+
+#[test]
+fn plan_attributes_group_changes_to_sopc_yaml() {
+    let r = Repo::new();
+    r.append("sopc.yaml", "\ngroups:\n  end:\n    - reservations\n    - closing\n");
+    r.edit("agents/sakura-sushi.yaml", "  - reservations\n  - closing\n", "  - end\n");
+    let before = snapshot(&build(r.root()));
+    r.edit("sopc.yaml", "    - reservations\n    - closing\n", "    - closing\n    - reservations\n");
+    let plan = make_plan(&before, &snapshot(&build(r.root())));
+    assert_eq!(groups(&plan), [("workspace:sopc.yaml".into(), "edited", strings(&["sakura-sushi"]))]);
 }
 
 #[test]
@@ -499,7 +655,6 @@ fn plan_new_and_removed_agents() {
     std::fs::remove_file(r.path("agents/sakura-sushi.yaml")).unwrap();
     std::fs::copy(r.path("agents/luigis-trattoria.yaml"), r.path("agents/luigis-brooklyn.yaml")).unwrap();
     r.edit("agents/luigis-brooklyn.yaml", "livekit: luigis-trattoria", "livekit: luigis-brooklyn");
-    r.edit("procedures/reservations.yaml", "[sakura-sushi, luigis-trattoria]", "[luigis-trattoria]");
     let plan = make_plan(&before, &snapshot(&build(r.root())));
     let got: Vec<String> = plan.changes.iter().map(|c| format!("{} {}", c.agent, c.status)).collect();
     assert_eq!(got, ["luigis-brooklyn added", "sakura-sushi removed"]);
@@ -517,7 +672,7 @@ fn affected_picks_agents_whose_prompt_changed_with_the_blocks_that_changed_it() 
     let r = Repo::new();
     let base = build(r.root());
     r.edit("procedures/reservations.yaml", "Never double-book a table", "Never double-book or overbook a table");
-    r.edit("bases/pizza-context.md", "12\" and 16\"", "10\", 12\" and 16\"");
+    r.edit("instructions/pizza-context.md", "12\" and 16\"", "10\", 12\" and 16\"");
     let result = affected(&build(r.root()), Some(&base), &[], false).unwrap();
     assert!(!result.all);
     let got: BTreeMap<&str, (&str, Vec<String>, Vec<String>)> =
@@ -525,7 +680,7 @@ fn affected_picks_agents_whose_prompt_changed_with_the_blocks_that_changed_it() 
     let want: BTreeMap<&str, (&str, Vec<String>, Vec<String>)> = [
         ("luigis-trattoria", ("changed", strings(&["sop:reservations"]), strings(&["reservations"]))),
         ("sakura-sushi", ("changed", strings(&["sop:reservations"]), strings(&["reservations"]))),
-        ("tonys-pizza", ("changed", strings(&["base:pizza-context"]), vec![])),
+        ("tonys-pizza", ("changed", strings(&["instruction:pizza-context"]), vec![])),
     ]
     .into_iter()
     .collect();
@@ -646,7 +801,7 @@ fn check_finds_mechanical_conflicts() {
         "  menu_allergen_link: tonys.com/allergens",
         "  menu_allergen_link: tonys.com/allergens\n  old_phone: 555-0100",
     );
-    r.append("bases/pizza-context.md", " Pickup only after 10pm.\n");
+    r.append("instructions/pizza-context.md", " Pickup only after 10pm.\n");
     r.edit(
         "procedures/delivery-handling.yaml",
         "procedureSteps:",
@@ -662,18 +817,22 @@ fn check_finds_mechanical_conflicts() {
     assert_eq!(
         by_code["numeric_conflict"].sources,
         [
-            pair("base `pizza-context`", "Pickup only after 10pm."),
-            pair("agent `tonys-pizza`", "Pickup only after 11pm.")
+            pair("agent `tonys-pizza`", "Pickup only after 11pm."),
+            pair("instruction `pizza-context`", "Pickup only after 10pm.")
         ]
     );
     assert_eq!(by_code["negation_conflict"].agents, ["tonys-pizza"]);
-    assert_eq!(by_code["duplicate_text"].sources[0].0, "base `brand-voice`");
+    assert_eq!(by_code["duplicate_text"].sources[0].0, "agent `tonys-pizza`");
+    assert_eq!(by_code["duplicate_text"].sources[1].0, "instruction `brand-voice`");
 }
 
 #[test]
 fn check_reports_a_shared_conflict_once_for_all_agents() {
     let r = Repo::new();
-    r.append("bases/closing.md", " Before hanging up, never repeat the order total and the pickup or delivery time.\n");
+    r.append(
+        "instructions/closing.md",
+        " Before hanging up, never repeat the order total and the pickup or delivery time.\n",
+    );
     let findings = lint(&ws(r.root()));
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].code, "negation_conflict");
@@ -725,7 +884,7 @@ fn list(v: &serde_json::Value) -> Vec<String> {
 fn fields_match_the_published_schemas() {
     // (schema, fields in canonical order, required fields a file must set)
     for (file, fields, required) in [
-        ("base.schema.json", &BASE_FIELDS[..BASE_FIELDS.len() - 1], &[][..]), // "text" is the body, not front matter
+        ("instruction.schema.json", &INSTRUCTION_FIELDS[..INSTRUCTION_FIELDS.len() - 1], &[][..]), // "text" is the body
         ("sop.schema.json", SOP_FIELDS, SOP_REQUIRED),
         ("agent.schema.json", AGENT_FIELDS, &[][..]),
         ("sopc.schema.json", CONFIG_FIELDS, &[][..]),
@@ -734,7 +893,6 @@ fn fields_match_the_published_schemas() {
         assert_eq!(keys(&s["properties"]), fields, "{file} properties");
         assert_eq!(list(&s["required"]), required, "{file} required");
     }
-    assert_eq!(list(&schema("base.schema.json")["properties"]["position"]["enum"]), POSITIONS);
     let sop = schema("sop.schema.json");
     assert_eq!(list(&sop["properties"]["delivery"]["enum"]), DELIVERIES);
     assert_eq!(keys(&sop["$defs"]["Step"]["properties"]), STEP_FIELDS);
@@ -802,8 +960,9 @@ fn markdown_fields_guidance_and_any_section_order() {
 #[test]
 fn markdown_formatting_checks_report_code_and_line() {
     for (text, want) in [
-        ("---\nname: X\nagents: \"*\"\n---\n# Name\n## Steps\n1. a\n", ("md_settings_field", 2)),
-        ("---\nagents: \"*\"\nprocedureSteps: [a]\n---\n# Name\n## Steps\n1. a\n", ("md_settings_field", 3)),
+        ("---\nname: X\nlocked: true\n---\n# Name\n## Steps\n1. a\n", ("md_settings_field", 2)),
+        ("---\nlocked: true\nprocedureSteps: [a]\n---\n# Name\n## Steps\n1. a\n", ("md_settings_field", 3)),
+        ("---\nagents: \"*\"\n---\n# Name\n## Steps\n1. a\n", ("old_format", 0)),
         ("Intro\n# Name\n## Steps\n1. a\n", ("md_text_before_name", 1)),
         ("# Name\n## Steps\n1. a\n# Other\n", ("md_extra_name", 4)),
         ("# Name\n## Steps\n1. a\n## Notes\n- b\n", ("md_unknown_section", 4)),
@@ -829,7 +988,7 @@ fn markdown_formatting_checks_report_code_and_line() {
     assert_eq!(md_problems("\n\n"), [("md_missing_name", 1)]);
     assert_eq!(md_problems("**Goal:** g\n## Steps\n1. a\n"), [("md_text_before_name", 1), ("md_missing_name", 1)]);
     assert_eq!(
-        md_problems("---\nagents: []\n---\n## Steps\n1. a\n"),
+        md_problems("---\nlocked: true\n---\n## Steps\n1. a\n"),
         [("md_text_before_name", 4), ("md_missing_name", 4)]
     );
     assert!(md_problems(MD_OK).is_empty());
@@ -844,9 +1003,8 @@ fn empty_never_or_warning_section_is_a_warning() {
     assert_eq!(codes(&warnings), ["md_empty_section"]);
     assert_eq!(warnings[0].message, "line 8: `## Never` has no items; add some or remove the heading");
     let r = Repo::new();
-    std::fs::write(r.path("procedures/extra.md"), format!("---\nagents: \"*\"\n---\n{MD_OK}\n## Warning signs\n"))
-        .unwrap();
-    assert_eq!(codes(&validate(&ws(r.root()))), ["md_empty_section"]);
+    std::fs::write(r.path("procedures/extra.md"), format!("{MD_OK}\n## Warning signs\n")).unwrap();
+    assert_eq!(codes(&validate(&ws(r.root()))), ["md_empty_section", "unused_block"]);
 }
 
 #[test]
@@ -856,7 +1014,7 @@ fn steps_are_required_in_yaml_too() {
     let issues = load_issues(r.root());
     assert_eq!(codes(&issues), ["missing_steps"]);
     assert_eq!(issues[0].path, "procedures/reservations.yaml");
-    assert!(issues[0].message.starts_with("line 5: "), "{}", issues[0].message);
+    assert!(issues[0].message.starts_with("line 4: "), "{}", issues[0].message);
     let r = Repo::new();
     std::fs::write(r.path("procedures/reservations.yaml"), "name: Reservations\ndescription: d\n").unwrap();
     assert_eq!(codes(&load_issues(r.root())), ["missing_steps"]);
@@ -874,11 +1032,11 @@ fn markdown_sop_paths_are_used_in_issues() {
     let r = Repo::new();
     std::fs::write(
         r.path("procedures/extra.md"),
-        format!("---\nagents: [nobody]\n---\n{}", MD_OK.replace("**Goal:** g\n", "")),
+        format!("---\ndelivery: auto\n---\n{}", MD_OK.replace("**Goal:** g\n", "")),
     )
     .unwrap();
     let issues = validate(&ws(r.root()));
-    assert_eq!(codes(&issues), ["unknown_agent", "missing_goal"]);
+    assert_eq!(codes(&issues), ["missing_goal", "unused_block"]);
     assert!(issues.iter().all(|i| i.path == "procedures/extra.md"));
 }
 
@@ -903,10 +1061,10 @@ fn fmt_is_canonical_and_idempotent() {
 
 #[test]
 fn fmt_keeps_yaml_values_exactly() {
-    let text = "# header comment\n\nid: x\ndelivery: prompt   # dropped\nname: 'X'\nagents: [b, \"vapi:asst_1\"]\nguidance: |+\n  keep\n\n   indented\n\nprocedureSteps:\n- text: plain object\n- \"Say: hi\"\n- |-\n  two\n  lines\n- text: t\n  tool: ''\nscope: >\n  folded\n  text\n";
+    let text = "# header comment\n\nid: x\ndelivery: prompt   # dropped\nname: 'X'\nlocked: yes\nguidance: |+\n  keep\n\n   indented\n\nprocedureSteps:\n- text: plain object\n- \"Say: hi\"\n- |-\n  two\n  lines\n- text: t\n  tool: ''\nscope: >\n  folded\n  text\n";
     let (sop, _) = parse_sop_file("procedures/x.yaml", text).unwrap();
     let (_, out) = rewrite("procedures/x.yaml", text, Kind::Yaml).unwrap();
-    assert!(out.starts_with("# header comment\n\nname: X\nagents: [b, vapi:asst_1]\n"), "{out}");
+    assert!(out.starts_with("# header comment\n\nname: X\nlocked: true\n"), "{out}");
     let (back, _) = parse_sop_file("procedures/x.yaml", &out).unwrap();
     assert_eq!(back.canonical_json(), sop.canonical_json());
     assert_eq!(rewrite("procedures/x.yaml", &out, Kind::Yaml).unwrap().1, out);
@@ -938,4 +1096,136 @@ fn convert_round_trip_keeps_yaml_and_comments() {
         rewrite("procedures/x.md", &md, Kind::Yaml).unwrap().1,
         "# Why this SOP exists.\n\nname: X\nprocedureSteps:\n  - a\n"
     );
+}
+
+// --- migrate -----------------------------------------------------------------------------------------
+
+use crate::migrate;
+use crate::workspace::{load_files, read_files};
+
+fn old_fixture(name: &str) -> PathBuf {
+    repo_root().join("tests/fixtures/old-format").join(name)
+}
+
+fn migrated(name: &str) -> migrate::Migration {
+    let files = read_files(&old_fixture(name).join("sops")).unwrap();
+    assert!(migrate::is_old(&files));
+    migrate::migrate(&files).unwrap()
+}
+
+#[test]
+fn migrate_reproduces_the_fixture_exactly() {
+    let m = migrated("restaurants");
+    assert_eq!(m.files, read_files(&sops()).unwrap());
+    assert!(m.dropped_locks.is_empty());
+    assert_eq!(migrate::verify(&m.files, &m.expected).unwrap(), 3);
+    assert!(!migrate::is_old(&m.files));
+}
+
+#[test]
+fn migrate_keeps_every_prompt_except_the_context_moving_to_the_top() {
+    for name in ["restaurants", "livekit-restaurant"] {
+        let dir = old_fixture(name);
+        let m = migrated(name);
+        let build = render_workspace(&load_files(&m.files).unwrap()).unwrap();
+        assert_eq!(build.agents.len(), if name == "restaurants" { 3 } else { 4 });
+        for (id, r) in &build.agents {
+            // The old prompts, as the previous release built them.
+            let old = read(&dir.join(format!("expected/{id}.prompt.md")));
+            let context = r.agent.context.trim();
+            assert!(old.contains(&format!("\n\n{context}\n\n")), "{name}/{id}");
+            let want = format!("{context}\n\n{}", old.replacen(&format!("\n\n{context}"), "", 1));
+            assert_eq!(r.prompt, want, "{name}/{id}");
+            let tool = dir.join(format!("expected/{id}.tool.json"));
+            let payload = serde_json::Value::Object(r.tool_payload.clone());
+            if tool.exists() {
+                assert_eq!(pretty_json(&payload, false) + "\n", read(&tool), "{name}/{id}");
+            } else {
+                assert!(r.tool_payload.is_empty(), "{name}/{id}");
+            }
+        }
+    }
+}
+
+#[test]
+fn migrate_writes_context_then_blocks_as_a_bullet_list() {
+    let m = migrated("livekit-restaurant");
+    assert_eq!(
+        m.files["agents/sakura-sushi.yaml"],
+        "# yaml-language-server: $schema=../../../../../../spec/agent.schema.json
+
+livekit: sakura-sushi
+context: |
+  Sakura is an omakase and sushi counter in Manhattan. Reservations strongly recommended. No delivery.
+blocks:
+  - restaurant-host
+  - brand-voice
+  - allergen-check
+  - reservations
+  - closing
+
+variables:
+  restaurant_name: Sakura Sushi
+  menu_allergen_link: sakurasushi.nyc/allergens
+  staff_transfer: the head chef # overrides the default in sopc.yaml
+"
+    );
+    assert!(!m.files.keys().any(|p| p.starts_with("bases/")));
+    assert_eq!(m.removes.len(), 5);
+    // Front matter that only held old fields goes; comments that stay are kept.
+    assert!(m.files["instructions/closing.md"].starts_with("Before hanging up"));
+    assert!(m.files["instructions/restaurant-host.md"].starts_with("---\n# A base is prompt text"));
+    // Comments right above a removed field go with it, and are listed.
+    assert!(m.files["procedures/allergen-check.md"].starts_with("---\ndelivery: prompt  # prompt (default)"));
+    let lost = m.lost_comments.iter().find(|(p, _)| p == "procedures/allergen-check.md").unwrap();
+    assert_eq!(lost.1.len(), 3);
+    let lost = m.lost_comments.iter().find(|(p, _)| p == "agents/sakura-sushi.yaml").unwrap();
+    assert_eq!(lost.1, ["line 6: # Opt out of blocks that target every agent. Locked blocks can't be excluded."]);
+}
+
+#[test]
+fn migrate_drops_locks_that_not_every_agent_uses() {
+    let m = migrated("livekit-restaurant");
+    let dropped: Vec<(&str, Vec<&str>)> =
+        m.dropped_locks.iter().map(|(id, a)| (id.as_str(), a.iter().map(String::as_str).collect())).collect();
+    assert_eq!(
+        dropped,
+        [
+            ("brand-voice-es", vec!["luigis-trattoria", "sakura-sushi", "tonys-pizza"]),
+            ("brand-voice", vec!["la-casita"]),
+        ]
+    );
+    // la-casita lists the Spanish voice instead of the English one.
+    let casita = &m.files["agents/la-casita.yaml"];
+    assert!(casita.contains("  - brand-voice-es\n") && !casita.contains("  - brand-voice\n"), "{casita}");
+    assert!(!m.files["instructions/brand-voice.md"].contains("locked"));
+    let plan = migrate::plan_text(&m, "sops", &|p| p.to_string());
+    assert!(plan.contains("warning: `brand-voice` was locked, but not every agent uses it (not: la-casita)"), "{plan}");
+    assert!(plan.contains("  bases/brand-voice.md → instructions/brand-voice.md: removed agents, exclude, locked\n"));
+    assert!(plan.contains(
+        "  agents/sakura-sushi.yaml: instructions → context; removed inherits, exclude; blocks: restaurant-host, brand-voice, allergen-check, reservations, closing\n"
+    ));
+    // A lock every agent keeps stays.
+    let m = migrated("restaurants");
+    assert!(m.files["instructions/brand-voice.md"].contains("locked: true"));
+}
+
+#[test]
+fn migrate_refuses_a_partly_migrated_folder() {
+    let mut files = read_files(&old_fixture("restaurants").join("sops")).unwrap();
+    files.insert("instructions/x.md".into(), "Hi.".into());
+    let err = migrate::migrate(&files).err().unwrap();
+    assert_eq!(codes(&err.0), ["migrate_failed"]);
+    let mut files = read_files(&old_fixture("restaurants").join("sops")).unwrap();
+    let agent = files["agents/tonys-pizza.yaml"].clone() + "blocks: [closing]\n";
+    files.insert("agents/tonys-pizza.yaml".into(), agent);
+    assert_eq!(codes(&migrate::migrate(&files).err().unwrap().0), ["migrate_failed"]);
+}
+
+#[test]
+fn migrate_convert_leaves_a_current_folder_alone() {
+    let files = read_files(&sops()).unwrap();
+    assert_eq!(migrate::convert(files.clone()).unwrap(), files);
+    let old = read_files(&old_fixture("restaurants").join("sops")).unwrap();
+    assert_eq!(migrate::convert(old).unwrap(), files);
 }

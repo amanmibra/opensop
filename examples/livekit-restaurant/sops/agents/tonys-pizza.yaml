@@ -3,12 +3,19 @@
 # One file per voice agent. The file name (tonys-pizza) is its id in sopc.
 
 livekit: tonys-pizza            # the LiveKit agent_name; exactly one of livekit | vapi | elevenlabs | retell
-inherits: [pizza-context]       # bases to include; pizza-context brings restaurant-host with it
+
+# Text only this agent gets. It goes first in the prompt.
+context: |
+  Tony's is a wood-fired pizza shop in Brooklyn. Pickup only after 10pm. Cash and card.
+
+# The shared blocks this agent uses: instructions, SOPs and groups, in prompt order.
+blocks:
+  - restaurant-host
+  - pizza-context
+  - brand-voice
+  - delivery-orders             # a group: allergen-check, then delivery-handling
+  - closing
 
 variables:                      # fill {{placeholders}} in every block this agent uses
   restaurant_name: Tony's Pizza
   menu_allergen_link: tonys.com/allergens
-
-# Text only this agent gets. Rendered after the top bases, before the SOPs.
-instructions: |
-  Tony's is a wood-fired pizza shop in Brooklyn. Pickup only after 10pm. Cash and card.

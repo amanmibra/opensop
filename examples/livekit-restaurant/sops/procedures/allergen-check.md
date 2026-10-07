@@ -1,7 +1,7 @@
 ---
 # An SOP is a procedure. The id is the file name (allergen-check).
 # Front matter holds settings only; everything else is in the body below.
-agents: "*"       # every agent; or a list of agent ids; omit for none
+locked: true      # every agent must list it (directly or through a group), or the build fails
 delivery: prompt  # prompt (default) | auto | tool. See FORMAT.md
 ---
 # Allergen check

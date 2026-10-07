@@ -44,7 +44,7 @@ GitHub emails the workflow's owner when a scheduled run fails. To post to Slack 
 
 ## When it fails
 
-- **drifted:** someone changed the prompt on the platform. Either copy the change into the right base, SOP or agent file (`sopc plan` shows which agents it reaches) and deploy, or redeploy from git to undo it.
+- **drifted:** someone changed the prompt on the platform. Either copy the change into the right instruction, SOP or agent file (`sopc plan` shows which agents it reaches) and deploy, or redeploy from git to undo it.
 - **error:** the line names the cause, e.g. `VAPI_API_KEY is not set` or `not found on Vapi (HTTP 404)` for an agent deleted on the platform.
 
 `sopc verify --json` prints the same report as JSON, for tools that post it elsewhere. Every flag is in the [CLI reference](../../CLI.md#sopc-verify).

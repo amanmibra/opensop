@@ -1,6 +1,5 @@
 ---
-# Targets two agents by id. Use the platform ref ("vapi:asst_...") if you prefer.
-agents: [sakura-sushi, luigis-trattoria]
+# Only the agents that list it get it: sakura-sushi and luigis-trattoria.
 ---
 # Reservations
 

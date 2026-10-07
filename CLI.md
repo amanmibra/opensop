@@ -4,7 +4,7 @@ Every command and flag. `sopc --help` (or `sopc <command> --help`) prints the sa
 
 - [Install and uninstall](#install-and-uninstall)
 - [How every command works](#how-every-command-works)
-- Commands: [`sopc`](#sopc) · [`validate`](#sopc-validate) · [`lint`](#sopc-lint) · [`fmt`](#sopc-fmt) · [`plan`](#sopc-plan) · [`affected`](#sopc-affected) · [`verify`](#sopc-verify) · [`agents`](#sopc-agents) · [`export`](#sopc-export) · [`convert`](#sopc-convert) · [`overlap`](#sopc-overlap) · [`compare`](#sopc-compare) · [`skills`](#sopc-skills) · [`guide`](#sopc-guide)
+- Commands: [`sopc`](#sopc) · [`validate`](#sopc-validate) · [`lint`](#sopc-lint) · [`fmt`](#sopc-fmt) · [`plan`](#sopc-plan) · [`affected`](#sopc-affected) · [`verify`](#sopc-verify) · [`agents`](#sopc-agents) · [`export`](#sopc-export) · [`convert`](#sopc-convert) · [`overlap`](#sopc-overlap) · [`compare`](#sopc-compare) · [`migrate`](#sopc-migrate) · [`skills`](#sopc-skills) · [`guide`](#sopc-guide)
 
 ## Install and uninstall
 
@@ -41,11 +41,13 @@ A closed pipe (`sopc guide | head`) exits 0.
 
 **Comparing with git.** `plan` and `affected` compare the current files with a git ref and print `Comparing with <ref> (<short sha>)` to stderr. Without `--against`, the ref is your default branch: `origin/HEAD`, then `origin/main`, `main`, `origin/master`, `master`. Git problems are reported in plain words, e.g. ``unknown git ref `origin/release`; check the name, or fetch it (`git fetch origin release`)``.
 
-**Nothing destructive without `--yes`.** Commands that rewrite your files (`fmt`, `convert`) never remove comments silently. A file that would lose comments is left as it is and listed with those comments, and the command exits 1. Rerun with `-y`/`--yes` to allow it.
+**Nothing destructive without `--yes`.** Commands that rewrite your files (`fmt`, `convert`) never remove comments silently. A file that would lose comments is left as it is and listed with those comments, and the command exits 1. Rerun with `-y`/`--yes` to allow it. `migrate` rewrites the whole folder, so it only shows its plan until you pass `--yes`.
 
 ## sopc
 
-Compiles every agent's prompt into `build/` inside the sopc folder: one `<agent>.prompt.md` per agent, a `<agent>.tool.json` for agents with tool-delivered SOPs, and `lock.json` (each prompt's hash and the hashes of the blocks it was built from).
+Compiles every agent's prompt into `build/` inside the sopc folder: one `<agent>.prompt.md` per agent, a `<agent>.tool.json` for agents with tool-delivered SOPs, and `lock.json`.
+
+`lock.json` lists, per agent: its `platform_ref`, the prompt's `hash`, the `tools` its SOPs name, and `blocks`: the agent file first, then each block in prompt order, as `{"kind", "id", "hash"}`. `kind` is `agent`, `instruction` or `sop`; a hash is the sha256 of the block's canonical JSON. Groups aren't listed: their blocks are.
 
 ```sh
 sopc                         # compile ./sops into sops/build
@@ -129,8 +131,10 @@ sopc plan --against v0.3.0
 $ sopc plan --summary
 Comparing with origin/main (3f9a2c1)
 3 agents change:
-  base `brand-voice` edited → 3 agents: luigis-trattoria, sakura-sushi, tonys-pizza
+  instruction `brand-voice` edited → 3 agents: luigis-trattoria, sakura-sushi, tonys-pizza
 ```
+
+Each line names a block and what happened to it: `edited` (its text or settings changed), `added` or `removed` (an agent started or stopped using it, through its `blocks` or a group). An agent file that changed is listed as `agent file`; a change only `sopc.yaml` explains (a default variable, a group's order, the SOP heading) as `` `sopc.yaml` edited ``.
 
 | Flag | Effect |
 |---|---|
@@ -138,7 +142,7 @@ Comparing with origin/main (3f9a2c1)
 | `--summary` | Leave out the diffs |
 | `--json` | Machine-readable output |
 
-If no default branch can be found, `plan` stops and asks for `--against`.
+If no default branch can be found, `plan` stops and asks for `--against`. A ref from before `sopc migrate` is built as migrating it would, so the plan right after migrating shows only each agent's own text moving to the top.
 
 ## sopc affected
 
@@ -218,8 +222,10 @@ Lists every agent: its id, platform, platform id and SOPs.
 
 ```sh
 sopc agents
-sopc agents --json   # adds bases, tools and prompt hashes
+sopc agents --json   # adds blocks, instructions, tools and prompt hashes
 ```
+
+With `--json`, each agent has `blocks` (instruction and SOP ids in prompt order, groups expanded), `instructions` and `sops` (the same, by kind), `tools` and `hash`.
 
 | Flag | Effect |
 |---|---|
@@ -234,9 +240,9 @@ sopc export
 sopc export -C path/to/sops
 ```
 
-The output is `{"config", "bases", "sops", "agents"}`. `config` holds `sopc.yaml`'s `variables`, `sops_heading` and `sop_order`, with defaults filled in. Each base, SOP and agent is the canonical JSON its `lock.json` hash is taken over (the fields in [FORMAT.md](FORMAT.md), with defaults filled in; a step written as plain text stays a string), plus `file`, its path in the folder. Agents also get `platform` and `platform_id`, and every platform field (`livekit`, `vapi`, `elevenlabs`, `retell`), `null` when unset. Variables keep their order in the file.
+The output is `{"config", "instructions", "sops", "agents"}`. `config` holds `sopc.yaml`'s `variables`, `groups` and `sops_heading`, with defaults filled in. Each instruction, SOP and agent is the canonical JSON its `lock.json` hash is taken over (the fields in [FORMAT.md](FORMAT.md), with defaults filled in; a step written as plain text stays a string), plus `file`, its path in the folder. Agents also get `platform` and `platform_id`, and every platform field (`livekit`, `vapi`, `elevenlabs`, `retell`), `null` when unset. Variables, groups and `blocks` keep their order in the file.
 
-Only parsing matters here: a file that can't be read prints `{"valid": false, "issues": [...]}`, as `sopc validate --json` does, and exits 1, but references between files (an unknown base, a missing variable) are left to `sopc validate`.
+Only parsing matters here: a file that can't be read prints `{"valid": false, "issues": [...]}`, as `sopc validate --json` does, and exits 1, but references between files (an unknown block, a missing variable) are left to `sopc validate`.
 
 ## sopc convert
 
@@ -276,6 +282,44 @@ sopc compare --originals prompts/
 | Flag | Effect |
 |---|---|
 | `--originals DIR` | Folder with the original prompts, `<agent-id>.md` or `.txt` (required) |
+
+## sopc migrate
+
+Converts a folder written for sopc v0.0.8 or earlier to the current format, in place. In the old format, bases and SOPs chose their agents (`agents`, `exclude`), agents inherited bases (`inherits`) and opted out (`exclude`), and `position` and `sop_order` set the order. Now each agent lists its blocks in order. Other commands fail on an old folder with `old_format` errors that say to run this.
+
+```sh
+sopc migrate         # show the plan; write nothing
+sopc migrate --yes   # write it
+```
+
+| Flag | Effect |
+|---|---|
+| `-y`, `--yes` | Write the changes (without it, only the plan is shown) |
+
+What it does:
+
+- `bases/<id>.md` moves to `instructions/<id>.md`; `agents`, `exclude`, `inherits` and `position` are removed from its front matter (the front matter goes if nothing is left in it).
+- SOPs lose `agents` and `exclude`; `sop_order` is removed from `sopc.yaml`.
+- Each agent's `instructions` becomes `context`, written right after its platform id, followed by `blocks`: exactly the blocks the old rules gave it, in the order its old prompt had them, one per line. `inherits` and `exclude` are removed. No groups are created; add them afterwards where they help.
+- A locked block must now be in every agent. A locked block that some agents didn't get loses its lock, with a warning naming it and those agents.
+- Files are edited as text, so comments and layout are kept. Comments directly above a removed field (or on its line) go with it; the plan lists each one.
+
+```console
+$ sopc migrate
+Migrating sops to the current format (13 file(s) change):
+  sops/agents/la-casita.yaml: instructions → context; removed inherits; blocks: restaurant-host, brand-voice-es, allergen-check, delivery-handling, closing
+  ...
+  sops/bases/brand-voice.md → sops/instructions/brand-voice.md: removed agents, exclude, locked
+  ...
+warning: `brand-voice` was locked, but not every agent uses it (not: la-casita); a locked block must be in every agent, so its lock is removed
+...
+Checked: all 4 agent prompt(s) stay the same, except each agent's own text (now `context`) moves to the top.
+Nothing written. Rerun with --yes to write these changes.
+```
+
+**It checks before and after writing.** Every agent's prompt, `get_sop` payloads and tools are built from the migrated files and compared with what the old rules built: they must be identical, except that the agent's own text moves from after the top bases to the very top of the prompt. Each edited file is also read back to confirm it holds the same values minus the removed fields. If anything differs, nothing is written (`migrate_failed`). With `--yes`, each file is written through a temporary file and renamed into place, old `bases/` files are deleted last, and the check runs again on the files on disk. Then run `sopc` to rebuild `build/`: every hash in `lock.json` changes, because the block formats changed.
+
+A folder that's already partly migrated (it has `instructions/`, or an agent with `blocks` or `context`) is refused; finish it by hand. A folder in the current format prints `already in the current format` and exits 0.
 
 ## sopc skills
 

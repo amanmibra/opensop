@@ -13,7 +13,7 @@ use serde_yaml_ng::{Mapping, Value};
 use std::sync::LazyLock;
 
 /// Front matter keys a Markdown SOP may set; everything else is written in the body.
-pub const SETTINGS: &[&str] = &["id", "agents", "exclude", "locked", "delivery"];
+pub const SETTINGS: &[&str] = &["id", "locked", "delivery"];
 /// (heading, field), in the standard order.
 const SECTIONS: [(&str, &str); 3] =
     [("Steps", "procedureSteps"), ("Never", "forbiddenActions"), ("Warning signs", "warningSigns")];
@@ -64,6 +64,11 @@ pub fn parse_markdown(text: &str, path: &str, issues: &mut Vec<Issue>, warnings:
     let mut map = load_yaml(meta, path, r.issues)?;
     let fields: Vec<String> = map.keys().filter_map(|k| k.as_str()).map(String::from).collect();
     for key in fields.iter().filter(|k| !SETTINGS.contains(&k.as_str())) {
+        if crate::model::OLD_SOP_FIELDS.contains(&key.as_str()) {
+            r.issues.push(crate::workspace::old_format(path, &format!("`{key}`")));
+            map.remove(key.as_str());
+            continue;
+        }
         let line = meta.lines().position(|l| l.trim_start_matches(['"', '\'']).starts_with(key.as_str()));
         let hint = match key.as_str() {
             "name" => "write the name as the `# <name>` heading".to_string(),
@@ -298,7 +303,7 @@ impl Kind {
 }
 
 /// A YAML scalar on one line: plain when YAML reads it back unchanged, else double-quoted.
-fn scalar(s: &str, flow: bool) -> String {
+pub fn scalar(s: &str, flow: bool) -> String {
     let plain = !s.is_empty()
         && s.trim() == s
         && !(flow && s.contains([',', '[', ']', '{', '}']))
@@ -311,7 +316,7 @@ fn scalar(s: &str, flow: bool) -> String {
 }
 
 /// `key: value` at an indent; text with line breaks as a `|` block.
-fn kv(key: &str, value: &str, indent: usize) -> String {
+pub fn kv(key: &str, value: &str, indent: usize) -> String {
     let body = value.trim_end_matches('\n');
     let printable = !value.chars().any(|c| c.is_control() && c != '\n');
     if !value.contains('\n') || body.is_empty() || body.starts_with(' ') || !printable {
@@ -329,22 +334,9 @@ fn kv(key: &str, value: &str, indent: usize) -> String {
     format!("{key}: |{chomp}\n{}", lines.join("\n"))
 }
 
-fn flow_list(items: &[String]) -> String {
-    format!("[{}]", items.iter().map(|s| scalar(s, true)).collect::<Vec<_>>().join(", "))
-}
-
 /// The settings that differ from their defaults, as YAML lines.
 fn settings(sop: &Sop) -> Vec<String> {
     let mut out = vec![];
-    let t = &sop.targeting;
-    if t.all {
-        out.push("agents: \"*\"".to_string());
-    } else if !t.agents.is_empty() {
-        out.push(format!("agents: {}", flow_list(&t.agents)));
-    }
-    if !t.exclude.is_empty() {
-        out.push(format!("exclude: {}", flow_list(&t.exclude)));
-    }
     if sop.locked {
         out.push("locked: true".into());
     }
@@ -491,11 +483,7 @@ fn output_difference(a: &Sop, b: &Sop) -> Option<String> {
     if let Some(k) = keys.iter().find(|k| pa[**k] != pb[**k]) {
         return Some(k.to_string());
     }
-    let settings = [
-        ("agents/exclude", a.targeting != b.targeting),
-        ("locked", a.locked != b.locked),
-        ("delivery", a.delivery != b.delivery),
-    ];
+    let settings = [("locked", a.locked != b.locked), ("delivery", a.delivery != b.delivery)];
     settings.iter().find(|(_, differ)| *differ).map(|(k, _)| k.to_string())
 }
 

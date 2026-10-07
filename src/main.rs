@@ -11,6 +11,7 @@ macro_rules! println {
 }
 
 mod analyze;
+mod migrate;
 mod model;
 mod plan;
 mod render;
@@ -260,6 +261,17 @@ Keys are read from ELEVENLABS_API_KEY, VAPI_API_KEY and RETELL_API_KEY. Only GET
         #[arg(long)]
         json: bool,
     },
+    /// Convert a folder from the format of sopc v0.0.8 and earlier (bases/, targeting) to the current one
+    #[command(
+        after_help = docs!("migrate"),
+        after_long_help = examples!("migrate", "  sopc migrate        Show what would change, and check every prompt stays the same
+  sopc migrate --yes  Write the changes")
+    )]
+    Migrate {
+        /// Write the changes (without it, only the plan is shown)
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
     /// Install the sopc skills for coding agents
     #[command(
         after_help = docs!("skills"),
@@ -396,6 +408,8 @@ fn build_at(root: &Path, git_ref: &str) -> anyhow::Result<Option<Build>> {
     if files.is_empty() {
         return Ok(None);
     }
+    // A ref from before `sopc migrate`: build it as migrating it would.
+    let files = migrate::convert(files)?;
     Ok(Some(render_workspace(&load_files(&files)?)?))
 }
 
@@ -500,12 +514,13 @@ fn run(command: Command, dir: Option<PathBuf>) -> anyhow::Result<ExitCode> {
             let build = build(&root)?;
             let mut list = vec![];
             for (id, r) in &build.agents {
-                let sops: Vec<&str> = r.sops.iter().map(|s| s.id.as_str()).collect();
+                let sops: Vec<&str> = r.sops().map(|s| s.id.as_str()).collect();
                 if json {
-                    let bases: Vec<&str> = r.bases.iter().map(|b| b.id.as_str()).collect();
+                    let blocks: Vec<&str> = r.blocks.iter().map(|b| b.id()).collect();
                     list.push(serde_json::json!({
                         "id": id, "platform_ref": r.agent.platform_ref(), "platform": r.agent.platform(),
-                        "platform_id": r.agent.platform_id(), "bases": bases, "sops": sops, "tools": r.tools, "hash": r.hash(),
+                        "platform_id": r.agent.platform_id(), "blocks": blocks, "instructions": r.instruction_ids(),
+                        "sops": sops, "tools": r.tools, "hash": r.hash(),
                     }));
                 } else {
                     let sops = if sops.is_empty() { "-".to_string() } else { sops.join(", ") };
@@ -573,6 +588,7 @@ fn run(command: Command, dir: Option<PathBuf>) -> anyhow::Result<ExitCode> {
             }
             return Ok(if report.ok() { ExitCode::SUCCESS } else { ExitCode::FAILURE });
         }
+        Command::Migrate { yes } => return migrate(&root()?, yes),
         Command::Skills { action: SkillsAction::Install, agent, into } => install_skills(&agent, into)?,
         Command::Guide => print!("{FORMAT_MD}"),
     }
@@ -701,6 +717,44 @@ fn convert(root: &Path, to: Kind, ids: &[String], yes: bool) -> anyhow::Result<E
         println!("nothing to convert");
     }
     Ok(if held.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE })
+}
+
+/// `sopc migrate`: prints the plan (checked in memory); with `yes`, writes it and checks the
+/// files on disk build the same prompts.
+fn migrate(root: &Path, yes: bool) -> anyhow::Result<ExitCode> {
+    let files = read_files(root)?;
+    if !files.contains_key(CONFIG) {
+        return Err(workspace::missing_config(&files).into());
+    }
+    if !migrate::is_old(&files) {
+        println!("{} is already in the current format; nothing to migrate", root.display());
+        return Ok(ExitCode::SUCCESS);
+    }
+    let m = migrate::migrate(&files)?;
+    migrate::verify(&m.files, &m.expected)?;
+    print!("{}", migrate::plan_text(&m, &root.display().to_string(), &|p| user_path(root, p)));
+    if !yes {
+        println!("Nothing written. Rerun with --yes to write these changes.");
+        return Ok(ExitCode::SUCCESS);
+    }
+    for (path, text) in &m.writes {
+        let target = root.join(path);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        write_atomic(&target, text).with_context(|| format!("can't write {}", user_path(root, path)))?;
+    }
+    for path in &m.removes {
+        std::fs::remove_file(root.join(path)).with_context(|| format!("can't remove {}", user_path(root, path)))?;
+    }
+    let old = root.join(workspace::OLD_INSTRUCTIONS);
+    if std::fs::read_dir(&old).is_ok_and(|mut entries| entries.next().is_none()) {
+        std::fs::remove_dir(&old)?;
+    }
+    let n = migrate::verify(&read_files(root)?, &m.expected)?;
+    println!("Wrote {} file(s). Verified on disk: {n} agent prompt(s) match.", m.writes.len());
+    println!("Run `sopc` to rebuild build/ (every hash in lock.json changes).");
+    Ok(ExitCode::SUCCESS)
 }
 
 fn append(path: &str, text: &str) -> anyhow::Result<()> {

@@ -37,32 +37,8 @@
     }
   },
   "additionalProperties": false,
-  "description": "A procedure the agent follows. Written as procedures/<id>.yaml; procedures/<id>.md (Markdown) holds the same fields, with only agents, exclude, locked and delivery in its front matter.",
+  "description": "A procedure the agent follows. Written as procedures/<id>.yaml; procedures/<id>.md (Markdown) holds the same fields, with only locked and delivery in its front matter. It says nothing about which agents use it; agents list it in `blocks`.",
   "properties": {
-    "agents": {
-      "anyOf": [
-        {
-          "const": "*",
-          "type": "string"
-        },
-        {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      ],
-      "description": "Agents this block applies to without them opting in. \"*\" for every agent, or a list of agent ids (file names in agents/) or platform refs like \"vapi:asst_9f3e\". Empty means only agents that inherit it (bases) or none (SOPs).",
-      "title": "Agents"
-    },
-    "exclude": {
-      "description": "Agent ids or platform refs to leave out, even when `agents` matches them.",
-      "items": {
-        "type": "string"
-      },
-      "title": "Exclude",
-      "type": "array"
-    },
     "id": {
       "description": "The file name without .yaml or .md. Set automatically; if you write it, it must match.",
       "title": "Id",
@@ -75,7 +51,7 @@
     },
     "locked": {
       "default": false,
-      "description": "If true, no agent can exclude this SOP.",
+      "description": "If true, every agent must include this SOP (directly or through a group), or the build fails. Automated suggestions must leave it alone.",
       "title": "Locked",
       "type": "boolean"
     },

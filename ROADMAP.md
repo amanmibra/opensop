@@ -4,7 +4,8 @@ sopc is the format for writing, versioning and building agent instructions, plus
 
 ## Done
 
-- **Format.** Bases (inherited prompt text, lockable), SOPs (goal, scope, guidance, steps, forbidden actions, warning signs, tools) and agents keyed by platform id. JSON Schemas in `spec/`; reference in [FORMAT.md](FORMAT.md).
+- **Format.** Two kinds of self-contained block, instructions (shared prompt text) and SOPs (goal, scope, guidance, steps, forbidden actions, warning signs, tools), and agents keyed by platform id that list the blocks they use, in order. Groups for sets of blocks many agents share; locks for blocks every agent must include. JSON Schemas in `spec/`; reference in [FORMAT.md](FORMAT.md).
+- **`migrate`.** Converts folders from the earlier format, where blocks chose their agents, and checks every prompt stays the same.
 - **Build and validate.** One full prompt per agent, `lock.json` with block hashes and referenced tools, clear errors (including YAML colon traps).
 - **`plan`.** Which agents a change touches and because of which block, with a prompt diff per agent.
 - **`lint`.** Duplicated text, number conflicts, "always X" vs "never X", unused variables.

@@ -1,8 +1,8 @@
 //! Deterministic text analysis for importing and reviewing prompts: `overlap`, `compare` and
 //! `lint`. Prompts are split into sentence-sized units and compared by their words.
 
-use crate::model::Agent;
-use crate::render::{fill_variables, find_variables, render_step, resolve_bases, resolve_sops, Build, StepKind};
+use crate::model::{Agent, Block};
+use crate::render::{fill_variables, find_variables, render_step, resolve_blocks, Build, StepKind};
 use crate::text::quote;
 use crate::workspace::Workspace;
 use regex::Regex;
@@ -424,11 +424,15 @@ fn agent_texts(ws: &Workspace, agent: &Agent, split: bool) -> Vec<(String, Strin
             out.push((label, text.to_string()));
         }
     };
-    for b in resolve_bases(ws, agent) {
-        add(format!("base `{}`", b.id), &b.text);
-    }
-    add(format!("agent `{}`", agent.id), &agent.instructions);
-    for s in resolve_sops(ws, agent) {
+    add(format!("agent `{}`", agent.id), &agent.context);
+    for block in resolve_blocks(ws, agent) {
+        let s = match block {
+            Block::Instruction(i) => {
+                add(format!("instruction `{}`", i.id), &i.text);
+                continue;
+            }
+            Block::Sop(s) => s,
+        };
         let mut parts = vec![s.description.clone(), s.scope.clone(), s.guidance.clone()];
         for (list, kind) in [
             (&s.procedure_steps, StepKind::Step),

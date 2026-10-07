@@ -1,4 +1,4 @@
-//! The sopc file formats (bases, SOPs, agents, sopc.yaml), parsed from YAML, and their
+//! The sopc file formats (instructions, SOPs, agents, sopc.yaml), parsed from YAML, and their
 //! canonical JSON, which lock.json block hashes are taken over.
 //!
 //! The field lists below fix both what a file may contain and the order of keys in the
@@ -9,13 +9,10 @@ use serde_json::{json, Value as Json};
 use serde_yaml_ng::{Mapping, Value};
 
 pub const PLATFORMS: [&str; 4] = ["livekit", "vapi", "elevenlabs", "retell"];
-pub const POSITIONS: [&str; 2] = ["top", "bottom"];
 pub const DELIVERIES: [&str; 3] = ["prompt", "auto", "tool"];
 
-pub const BASE_FIELDS: &[&str] = &["agents", "exclude", "id", "inherits", "locked", "position", "text"];
+pub const INSTRUCTION_FIELDS: &[&str] = &["id", "locked", "text"];
 pub const SOP_FIELDS: &[&str] = &[
-    "agents",
-    "exclude",
     "id",
     "name",
     "locked",
@@ -27,21 +24,19 @@ pub const SOP_FIELDS: &[&str] = &[
     "forbiddenActions",
     "warningSigns",
 ];
-pub const AGENT_FIELDS: &[&str] =
-    &["id", "livekit", "vapi", "elevenlabs", "retell", "inherits", "exclude", "variables", "instructions"];
-pub const CONFIG_FIELDS: &[&str] = &["version", "variables", "sops_heading", "sop_order"];
+pub const AGENT_FIELDS: &[&str] = &["id", "livekit", "vapi", "elevenlabs", "retell", "context", "blocks", "variables"];
+pub const CONFIG_FIELDS: &[&str] = &["version", "variables", "groups", "sops_heading"];
 pub const STEP_FIELDS: &[&str] = &["text", "tool", "required"];
-/// Fields a file must set ("id" and a base's "text" are filled in by the loader).
+/// Fields a file must set ("id" and an instruction's "text" are filled in by the loader).
 pub const SOP_REQUIRED: &[&str] = &["name", "procedureSteps"];
 pub const STEP_REQUIRED: &[&str] = &["text"];
 
-/// The `agents` / `exclude` pair shared by bases and SOPs.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Targeting {
-    pub all: bool, // agents: "*"
-    pub agents: Vec<String>,
-    pub exclude: Vec<String>,
-}
+/// Fields of the format before `sopc migrate` (v0.0.8 and earlier), by file kind. Finding one
+/// means the folder needs migrating.
+pub const OLD_INSTRUCTION_FIELDS: &[&str] = &["agents", "exclude", "inherits", "position"];
+pub const OLD_SOP_FIELDS: &[&str] = &["agents", "exclude"];
+pub const OLD_AGENT_FIELDS: &[&str] = &["inherits", "exclude", "instructions"];
+pub const OLD_CONFIG_FIELDS: &[&str] = &["sop_order"];
 
 /// A step, forbidden action or warning sign.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -59,13 +54,11 @@ impl Step {
     }
 }
 
+/// Shared prompt text that isn't a procedure: instructions/<id>.md.
 #[derive(Clone, Debug, Default)]
-pub struct Base {
+pub struct Instruction {
     pub id: String,
-    pub targeting: Targeting,
-    pub inherits: Vec<String>,
     pub locked: bool,
-    pub position: String,
     pub text: String,
 }
 
@@ -74,7 +67,6 @@ pub struct Sop {
     pub id: String,
     /// The file it was read from, e.g. "procedures/allergen-check.md" (not part of its JSON).
     pub file: String,
-    pub targeting: Targeting,
     pub name: String,
     pub locked: bool,
     pub delivery: String,
@@ -84,6 +76,35 @@ pub struct Sop {
     pub procedure_steps: Vec<Step>,
     pub forbidden_actions: Vec<Step>,
     pub warning_signs: Vec<Step>,
+}
+
+/// An instruction or an SOP: what an agent's `blocks` list names (besides groups).
+#[derive(Clone, Debug)]
+pub enum Block {
+    Instruction(Instruction),
+    Sop(Sop),
+}
+
+impl Block {
+    pub fn id(&self) -> &str {
+        match self {
+            Block::Instruction(i) => &i.id,
+            Block::Sop(s) => &s.id,
+        }
+    }
+    /// The kind recorded in lock.json: "instruction" or "sop".
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Block::Instruction(_) => "instruction",
+            Block::Sop(_) => "sop",
+        }
+    }
+    pub fn canonical_json(&self) -> String {
+        match self {
+            Block::Instruction(i) => i.canonical_json(),
+            Block::Sop(s) => s.canonical_json(),
+        }
+    }
 }
 
 /// Placeholder values, in the order they were written.
@@ -114,10 +135,11 @@ impl Vars {
 pub struct Agent {
     pub id: String,
     pub platforms: [Option<String>; 4], // livekit, vapi, elevenlabs, retell
-    pub inherits: Vec<String>,
-    pub exclude: Vec<String>,
+    /// Text only this agent gets; first in its prompt.
+    pub context: String,
+    /// Instruction, SOP and group ids, in prompt order.
+    pub blocks: Vec<String>,
     pub variables: Vars,
-    pub instructions: String,
 }
 
 impl Agent {
@@ -140,25 +162,24 @@ impl Agent {
 #[derive(Clone, Debug)]
 pub struct Config {
     pub variables: Vars,
+    /// Group name → block and group ids, in order.
+    pub groups: Vec<(String, Vec<String>)>,
     pub sops_heading: String,
-    pub sop_order: Vec<String>,
+}
+
+impl Config {
+    pub fn group(&self, name: &str) -> Option<&[String]> {
+        self.groups.iter().find(|(n, _)| n == name).map(|(_, ids)| ids.as_slice())
+    }
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Config { variables: Vars::default(), sops_heading: "## Procedures".into(), sop_order: vec![] }
+        Config { variables: Vars::default(), groups: vec![], sops_heading: "## Procedures".into() }
     }
 }
 
 // --- canonical JSON --------------------------------------------------------------------------
-
-fn agents_json(t: &Targeting) -> Json {
-    if t.all {
-        json!("*")
-    } else {
-        json!(t.agents)
-    }
-}
 
 fn steps_json(steps: &[Step]) -> Json {
     let items = steps.iter().map(|s| {
@@ -171,21 +192,16 @@ fn steps_json(steps: &[Step]) -> Json {
     Json::Array(items.collect())
 }
 
-impl Base {
+impl Instruction {
     pub fn canonical_json(&self) -> String {
-        json!({
-            "agents": agents_json(&self.targeting), "exclude": self.targeting.exclude, "id": self.id,
-            "inherits": self.inherits, "locked": self.locked, "position": self.position, "text": self.text,
-        })
-        .to_string()
+        json!({"id": self.id, "locked": self.locked, "text": self.text}).to_string()
     }
 }
 
 impl Sop {
     pub fn canonical_json(&self) -> String {
         json!({
-            "agents": agents_json(&self.targeting), "exclude": self.targeting.exclude, "id": self.id,
-            "name": self.name, "locked": self.locked, "delivery": self.delivery,
+            "id": self.id, "name": self.name, "locked": self.locked, "delivery": self.delivery,
             "description": self.description, "scope": self.scope, "guidance": self.guidance,
             "procedureSteps": steps_json(&self.procedure_steps),
             "forbiddenActions": steps_json(&self.forbidden_actions),
@@ -199,16 +215,11 @@ impl Agent {
     pub fn canonical_json(&self) -> String {
         let vars: serde_json::Map<String, Json> = self.variables.0.iter().map(|(k, v)| (k.clone(), json!(v))).collect();
         let [livekit, vapi, elevenlabs, retell] = &self.platforms;
-        let mut out = json!({
-            "id": self.id, "livekit": livekit, "vapi": vapi, "elevenlabs": elevenlabs,
-            "inherits": self.inherits, "exclude": self.exclude, "variables": vars,
-            "instructions": self.instructions,
-        });
-        // Added after the others: only present when set, so existing agents keep their hashes.
-        if retell.is_some() {
-            out.as_object_mut().unwrap().insert("retell".into(), json!(retell));
-        }
-        out.to_string()
+        json!({
+            "id": self.id, "livekit": livekit, "vapi": vapi, "elevenlabs": elevenlabs, "retell": retell,
+            "context": self.context, "blocks": self.blocks, "variables": vars,
+        })
+        .to_string()
     }
 }
 
@@ -297,6 +308,26 @@ impl<'a> Fields<'a> {
         self.get(name).is_some_and(|(v, loc)| to_bool(v, &loc, e))
     }
 
+    /// name → list of text, in order.
+    fn lists(&self, name: &str, e: &mut Errors) -> Vec<(String, Vec<String>)> {
+        let Some((v, loc)) = self.get(name) else { return vec![] };
+        let Value::Mapping(m) = v else {
+            e.add(&loc, "expected a mapping of names to lists");
+            return vec![];
+        };
+        let mut out: Vec<(String, Vec<String>)> = vec![];
+        for (k, v) in m {
+            let item = join(&loc, &scalar_text(k));
+            let key = to_string(untag(k), &item, e);
+            let list = match untag(v) {
+                Value::Null => vec![],
+                v => to_list(v, &item, e),
+            };
+            out.push((key, list));
+        }
+        out
+    }
+
     fn choice(&self, name: &str, choices: &[&str], e: &mut Errors) -> String {
         match self.get(name) {
             None => choices[0].to_string(),
@@ -322,19 +353,6 @@ impl<'a> Fields<'a> {
             out.set(key, to_string(untag(v), &item, e));
         }
         out
-    }
-
-    fn targeting(&self, e: &mut Errors) -> Targeting {
-        let all = matches!(self.get("agents"), Some((Value::String(s), _)) if s == "*");
-        let agents = match self.get("agents") {
-            Some((Value::Sequence(_), _)) => self.list("agents", e),
-            Some((_, loc)) if !all => {
-                e.add(&loc, "expected \"*\" or a list of agents");
-                vec![]
-            }
-            _ => vec![],
-        };
-        Targeting { all, agents, exclude: self.list("exclude", e) }
     }
 
     fn steps(&self, name: &str, e: &mut Errors) -> Vec<Step> {
@@ -412,19 +430,16 @@ fn finish<T>(value: T, e: Errors) -> Result<T, Vec<String>> {
     }
 }
 
-/// A base's front matter, with "id" and "text" already set.
-pub fn parse_base(map: &Mapping) -> Result<Base, Vec<String>> {
+/// An instruction's front matter, with "id" and "text" already set.
+pub fn parse_instruction(map: &Mapping) -> Result<Instruction, Vec<String>> {
     let mut e = Errors::default();
-    let f = Fields::new(map, "", BASE_FIELDS, &[], &mut e);
-    let base = Base {
-        targeting: f.targeting(&mut e),
+    let f = Fields::new(map, "", INSTRUCTION_FIELDS, &[], &mut e);
+    let instruction = Instruction {
         id: f.string("id", &mut e).unwrap_or_default(),
-        inherits: f.list("inherits", &mut e),
         locked: f.boolean("locked", &mut e),
-        position: f.choice("position", &POSITIONS, &mut e),
         text: f.string("text", &mut e).unwrap_or_default(),
     };
-    finish(base, e)
+    finish(instruction, e)
 }
 
 /// A procedure file, with "id" already set.
@@ -434,7 +449,6 @@ pub fn parse_sop(map: &Mapping) -> Result<Sop, Vec<String>> {
     let f = Fields::new(map, "", SOP_FIELDS, &SOP_REQUIRED[..1], &mut e);
     let text = |name: &str, e: &mut Errors| f.string(name, e).unwrap_or_default();
     let sop = Sop {
-        targeting: f.targeting(&mut e),
         id: text("id", &mut e),
         name: text("name", &mut e),
         locked: f.boolean("locked", &mut e),
@@ -457,10 +471,9 @@ pub fn parse_agent(map: &Mapping) -> Result<Agent, Vec<String>> {
     let agent = Agent {
         id: f.string("id", &mut e).unwrap_or_default(),
         platforms: PLATFORMS.map(|p| f.opt_string(p, &mut e)),
-        inherits: f.list("inherits", &mut e),
-        exclude: f.list("exclude", &mut e),
+        context: f.string("context", &mut e).unwrap_or_default(),
+        blocks: f.list("blocks", &mut e),
         variables: f.vars("variables", &mut e),
-        instructions: f.string("instructions", &mut e).unwrap_or_default(),
     };
     if e.0.is_empty() && agent.platforms.iter().filter(|p| p.as_deref().is_some_and(|s| !s.is_empty())).count() != 1 {
         e.add("", &format!("agent '{}' must set exactly one of {}", agent.id, PLATFORMS.join(", ")));
@@ -479,8 +492,8 @@ pub fn parse_config(map: &Mapping) -> Result<Config, Vec<String>> {
     }
     let config = Config {
         variables: f.vars("variables", &mut e),
+        groups: f.lists("groups", &mut e),
         sops_heading: f.string("sops_heading", &mut e).unwrap_or_else(|| Config::default().sops_heading),
-        sop_order: f.list("sop_order", &mut e),
     };
     finish(config, e)
 }

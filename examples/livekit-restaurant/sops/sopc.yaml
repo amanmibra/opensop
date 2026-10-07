@@ -8,8 +8,12 @@ version: 1
 variables:
   staff_transfer: the manager on duty
 
-# Heading placed above the SOPs in every prompt.
-sops_heading: "## Procedures"
+# Named, ordered sets of blocks. An agent lists a group in `blocks` like a block,
+# and it expands in place. Groups can include other groups.
+groups:
+  delivery-orders:              # restaurants that deliver
+    - allergen-check
+    - delivery-handling
 
-# SOPs listed here come first, in this order. Unlisted SOPs follow alphabetically.
-sop_order: [allergen-check]
+# Heading placed above the first SOP in every prompt.
+sops_heading: "## Procedures"

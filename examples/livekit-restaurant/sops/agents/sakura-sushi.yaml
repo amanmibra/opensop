@@ -1,14 +1,16 @@
 # yaml-language-server: $schema=../../../../spec/agent.schema.json
 
 livekit: sakura-sushi
-inherits: [restaurant-host]
-
-# Opt out of blocks that target every agent. Locked blocks can't be excluded.
-exclude: [delivery-handling]
+context: |
+  Sakura is an omakase and sushi counter in Manhattan. Reservations strongly recommended. No delivery.
+blocks:
+  - restaurant-host
+  - brand-voice
+  - allergen-check              # no delivery-orders: Sakura doesn't deliver
+  - reservations
+  - closing
 
 variables:
   restaurant_name: Sakura Sushi
   menu_allergen_link: sakurasushi.nyc/allergens
   staff_transfer: the head chef # overrides the default in sopc.yaml
-instructions: |
-  Sakura is an omakase and sushi counter in Manhattan. Reservations strongly recommended. No delivery.

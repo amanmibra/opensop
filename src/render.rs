@@ -1,8 +1,8 @@
 //! Assembling each agent's prompt, the get_sop payloads, and build/ (prompts and lock.json).
 
-use crate::model::{Agent, Base, Sop, Step, Vars};
+use crate::model::{Agent, Block, Sop, Step, Vars};
 use crate::text::{pretty_json, sha256_hex};
-use crate::workspace::{targets, validate, Issue, Issues, Workspace};
+use crate::workspace::{validate, Issue, Issues, Workspace};
 use regex::{Captures, Regex};
 use serde_json::{json, Map, Value as Json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,45 +23,65 @@ pub fn fill_variables(text: &str, values: &Vars) -> String {
 
 // --- resolution ----------------------------------------------------------------------------------
 
-fn opted_out(id: &str, locked: bool, agent: &Agent) -> bool {
-    !locked && agent.exclude.iter().any(|x| x == id)
+/// Where a block in an agent's expanded list came from: its own `blocks`, or a group.
+fn source(group: &str) -> String {
+    if group.is_empty() {
+        "directly".into()
+    } else {
+        format!("in group `{group}`")
+    }
 }
 
-/// The bases an agent gets, in order: its `inherits` (parents first), then bases that target it.
-pub fn resolve_bases<'a>(ws: &'a Workspace, agent: &Agent) -> Vec<&'a Base> {
-    fn visit<'a>(ws: &'a Workspace, id: &str, stack: &mut Vec<String>, out: &mut Vec<&'a Base>) {
-        if out.iter().any(|b| b.id == id) || stack.iter().any(|s| s == id) {
-            return;
+/// Expands an agent's `blocks` (groups in place, recursively) into instruction and SOP ids, in
+/// prompt order. Problems are reported against `path`: an id that is neither a block nor a group
+/// (`unknown_block`) and a block reached twice (`duplicate_block`). Group cycles are reported by
+/// [`crate::workspace::validate`]; here they are only stopped.
+pub fn expand(ws: &Workspace, ids: &[String], path: &str, issues: &mut Vec<Issue>) -> Vec<String> {
+    fn walk(
+        ws: &Workspace,
+        id: &str,
+        group: &str,
+        stack: &mut Vec<String>,
+        out: &mut Vec<(String, String)>,
+        path: &str,
+        issues: &mut Vec<Issue>,
+    ) {
+        if let Some(members) = ws.config.group(id) {
+            if stack.iter().any(|g| g == id) {
+                return;
+            }
+            stack.push(id.to_string());
+            for m in members {
+                walk(ws, m, id, stack, out, path, issues);
+            }
+            stack.pop();
+        } else if ws.block(id).is_none() {
+            if group.is_empty() {
+                let msg = format!("blocks lists '{id}', which is not an instruction, SOP or group");
+                issues.push(Issue::error("unknown_block", path, msg));
+            }
+        } else if let Some((_, first)) = out.iter().find(|(b, _)| b == id) {
+            let msg = format!(
+                "'{id}' appears twice in blocks ({} and {}); list each block once",
+                source(first),
+                source(group)
+            );
+            issues.push(Issue::error("duplicate_block", path, msg));
+        } else {
+            out.push((id.to_string(), group.to_string()));
         }
-        let Some(base) = ws.base(id) else { return };
-        stack.push(id.to_string());
-        for parent in &base.inherits {
-            visit(ws, parent, stack, out);
-        }
-        stack.pop();
-        out.push(base);
     }
-    let mut targeted: Vec<&Base> = ws.bases.iter().filter(|b| targets(&b.targeting, agent)).collect();
-    targeted.sort_by(|a, b| a.id.cmp(&b.id));
     let mut out = vec![];
-    for id in &agent.inherits {
-        visit(ws, id, &mut vec![], &mut out);
+    for id in ids {
+        walk(ws, id, "", &mut vec![], &mut out, path, issues);
     }
-    for b in targeted.into_iter().filter(|b| !opted_out(&b.id, b.locked, agent)) {
-        visit(ws, &b.id, &mut vec![], &mut out);
-    }
-    out
+    out.into_iter().map(|(id, _)| id).collect()
 }
 
-/// The SOPs an agent gets: those in `sop_order` first, then the rest by id.
-pub fn resolve_sops<'a>(ws: &'a Workspace, agent: &Agent) -> Vec<&'a Sop> {
-    let mut matching: Vec<&Sop> =
-        ws.sops.iter().filter(|s| targets(&s.targeting, agent) && !opted_out(&s.id, s.locked, agent)).collect();
-    matching.sort_by(|a, b| a.id.cmp(&b.id));
-    let order = &ws.config.sop_order;
-    let ordered = order.iter().filter_map(|id| matching.iter().find(|s| &s.id == id).copied());
-    let rest = matching.iter().filter(|s| !order.contains(&s.id)).copied();
-    ordered.chain(rest).collect()
+/// The blocks an agent gets, in prompt order.
+pub fn resolve_blocks(ws: &Workspace, agent: &Agent) -> Vec<Block> {
+    let ids = expand(ws, &agent.blocks, "", &mut vec![]);
+    ids.iter().filter_map(|id| ws.block(id)).collect()
 }
 
 // --- SOP text ----------------------------------------------------------------------------------
@@ -156,7 +176,7 @@ pub fn sop_tools(s: &Sop) -> impl Iterator<Item = &str> {
     s.procedure_steps.iter().chain(&s.forbidden_actions).chain(&s.warning_signs).filter_map(|st| st.tool())
 }
 
-fn fill_json(v: &mut Json, values: &Vars) {
+pub fn fill_json(v: &mut Json, values: &Vars) {
     match v {
         Json::String(s) => *s = fill_variables(s, values),
         Json::Array(items) => items.iter_mut().for_each(|x| fill_json(x, values)),
@@ -171,8 +191,8 @@ fn fill_json(v: &mut Json, values: &Vars) {
 pub struct Rendered {
     pub agent: Agent,
     pub prompt: String,
-    pub bases: Vec<Base>,
-    pub sops: Vec<Sop>,
+    /// The instructions and SOPs it was built from, in prompt order.
+    pub blocks: Vec<Block>,
     /// SOP id → get_sop payload, for SOPs not delivered entirely in the prompt.
     pub tool_payload: Map<String, Json>,
     pub tools: Vec<String>,
@@ -183,12 +203,25 @@ impl Rendered {
         sha256_hex(&self.prompt)
     }
 
-    /// "kind:id" → hash of the block's canonical JSON, in prompt order (agent first).
+    /// (kind, id, hash of the block's canonical JSON), in prompt order (agent first).
     pub fn block_hashes(&self) -> Vec<(String, String, String)> {
         let agent = ("agent".to_string(), self.agent.id.clone(), sha256_hex(&self.agent.canonical_json()));
-        let bases = self.bases.iter().map(|b| ("base".into(), b.id.clone(), sha256_hex(&b.canonical_json())));
-        let sops = self.sops.iter().map(|s| ("sop".into(), s.id.clone(), sha256_hex(&s.canonical_json())));
-        std::iter::once(agent).chain(bases).chain(sops).collect()
+        let blocks =
+            self.blocks.iter().map(|b| (b.kind().to_string(), b.id().to_string(), sha256_hex(&b.canonical_json())));
+        std::iter::once(agent).chain(blocks).collect()
+    }
+
+    /// Its SOPs, in prompt order.
+    pub fn sops(&self) -> impl Iterator<Item = &Sop> {
+        self.blocks.iter().filter_map(|b| match b {
+            Block::Sop(s) => Some(s),
+            Block::Instruction(_) => None,
+        })
+    }
+
+    /// Ids of its instructions, in prompt order.
+    pub fn instruction_ids(&self) -> Vec<&str> {
+        self.blocks.iter().filter(|b| matches!(b, Block::Instruction(_))).map(|b| b.id()).collect()
     }
 }
 
@@ -226,35 +259,36 @@ pub fn render_workspace(ws: &Workspace) -> Result<Build, Issues> {
     Ok(Build { agents, warnings })
 }
 
+/// One agent's prompt: its `context`, then each block in list order. The SOP heading
+/// (`sops_heading`, unless empty) goes once, right before the first SOP.
 pub fn render_agent(ws: &Workspace, agent: &Agent) -> Rendered {
-    let bases = resolve_bases(ws, agent);
-    let sops = resolve_sops(ws, agent);
-    let mut sections: Vec<String> = bases.iter().filter(|b| b.position == "top").map(|b| b.text.clone()).collect();
-    sections.push(agent.instructions.trim().to_string());
-    if !sops.is_empty() {
-        let parts: Vec<String> = sops.iter().map(|s| render_sop_in_prompt(s)).collect();
-        sections.push(format!("{}\n\n{}", ws.config.sops_heading, parts.join("\n\n")));
+    let blocks = resolve_blocks(ws, agent);
+    let mut sections = vec![agent.context.trim().to_string()];
+    let mut heading = Some(ws.config.sops_heading.trim()).filter(|h| !h.is_empty());
+    for block in &blocks {
+        match block {
+            Block::Instruction(i) => sections.push(i.text.clone()),
+            Block::Sop(s) => match heading.take() {
+                Some(h) => sections.push(format!("{h}\n\n{}", render_sop_in_prompt(s))),
+                None => sections.push(render_sop_in_prompt(s)),
+            },
+        }
     }
-    sections.extend(bases.iter().filter(|b| b.position == "bottom").map(|b| b.text.clone()));
     sections.retain(|s| !s.is_empty());
     let values = ws.config.variables.merged(&agent.variables);
     let prompt = fill_variables(&sections.join("\n\n"), &values) + "\n";
 
-    let mut tool_payload = Map::new();
-    for s in sops.iter().filter(|s| s.delivery != "prompt") {
-        let mut payload = sop_payload(s);
-        fill_json(&mut payload, &values);
-        tool_payload.insert(s.id.clone(), payload);
+    let (mut tool_payload, mut tools) = (Map::new(), BTreeSet::new());
+    for block in &blocks {
+        let Block::Sop(s) = block else { continue };
+        tools.extend(sop_tools(s).map(String::from));
+        if s.delivery != "prompt" {
+            let mut payload = sop_payload(s);
+            fill_json(&mut payload, &values);
+            tool_payload.insert(s.id.clone(), payload);
+        }
     }
-    let tools: BTreeSet<&str> = sops.iter().flat_map(|s| sop_tools(s)).collect();
-    Rendered {
-        agent: agent.clone(),
-        prompt,
-        bases: bases.into_iter().cloned().collect(),
-        sops: sops.into_iter().cloned().collect(),
-        tool_payload,
-        tools: tools.into_iter().map(String::from).collect(),
-    }
+    Rendered { agent: agent.clone(), prompt, blocks, tool_payload, tools: tools.into_iter().collect() }
 }
 
 /// Writes <agent>.prompt.md, <agent>.tool.json and lock.json into `out`. The files are written

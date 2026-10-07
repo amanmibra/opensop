@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../../../../../spec/sop.schema.json
+#
+# SOPs can also be written in YAML, with the same fields. sakura-sushi opts out
+# of this one with `exclude` in its agent file.
+
+name: Delivery
+agents: "*"
+description: Delivery orders have a confirmed address inside the delivery zone.
+scope: The customer asks for delivery.
+procedureSteps:
+  - Ask for the full delivery address
+  - text: Check the address is inside the delivery zone
+    tool: check_delivery_zone
+  - Tell the customer the estimated delivery time

@@ -20,18 +20,18 @@ livekit-restaurant/
     instructions.ts                loads this agent's prompt from sops/build/
     tools.ts                       mock versions of the tools the SOPs name (lookup_allergens, transfer_to_staff, ...)
   sops/                            the instructions, in sopc format
-    sopc.yaml                    defaults for every agent (e.g. who to transfer to)
-    bases/                         prompt text that isn't a procedure
+    sopc.yaml                      defaults for every agent (e.g. who to transfer to), and groups
+    instructions/                  shared prompt text that isn't a procedure
       restaurant-host.md             "You are the phone host for {{restaurant_name}}..."
-      brand-voice.md                 every agent except la-casita; locked, so no agent can drop it
-      brand-voice-es.md              la-casita only: the same voice, in Spanish; also locked
-      pizza-context.md               only pizza places; builds on restaurant-host
-      closing.md                     every agent; goes at the very end
+      brand-voice.md                 the English brand voice
+      brand-voice-es.md              the same voice, in Spanish, for la-casita
+      pizza-context.md               only the pizza place lists it
+      closing.md                     every agent lists it last
     procedures/                    SOPs, in Markdown (recommended) or YAML
-      allergen-check.md              every agent; uses the lookup_allergens tool
-      delivery-handling.yaml         every agent except Sakura (she opts out); the same format in YAML
+      allergen-check.md              every agent; locked; uses the lookup_allergens tool
+      delivery-handling.yaml         the same format in YAML; Sakura doesn't deliver
       reservations.md                Sakura and Luigi's only
-    agents/                        one file per restaurant
+    agents/                        one file per restaurant: its own text and the blocks it uses
       tonys-pizza.yaml
       luigis-trattoria.yaml
       sakura-sushi.yaml
@@ -40,52 +40,64 @@ livekit-restaurant/
       tonys-pizza.prompt.md          the full prompt Tony's agent runs with
       luigis-trattoria.prompt.md
       sakura-sushi.prompt.md
+      la-casita.prompt.md
       lock.json                      which blocks and version each prompt was built from
   Dockerfile                       copies sops/build/ into the image
   package.json
 ```
 
-Every file in `sops/` has comments explaining its fields (in a Markdown SOP, they're in the front matter, so they never reach a prompt). Start with `agents/sakura-sushi.yaml`, then open `build/sakura-sushi.prompt.md` to see what it turned into.
+Every file in `sops/` has comments explaining its fields (in Markdown files, they're in the front matter, so they never reach a prompt). Start with `agents/sakura-sushi.yaml`, then open `build/sakura-sushi.prompt.md` to see what it turned into.
 
 ## How a restaurant's prompt is put together
 
-Sakura's agent file is short, because everything shared lives elsewhere:
+Instructions and SOPs don't say who uses them. Each agent file lists the blocks it uses, in the order they go in its prompt. Sakura's is short, because everything shared lives elsewhere:
 
 ```yaml
 livekit: sakura-sushi                # the LiveKit agent_name this file is for
-inherits: [restaurant-host]          # include the generic host intro
-exclude: [delivery-handling]         # Sakura doesn't deliver
+context: |                           # Sakura's own text; first in her prompt
+  Sakura is an omakase and sushi counter in Manhattan. Reservations strongly recommended. No delivery.
+blocks:                              # the shared blocks, in prompt order
+  - restaurant-host
+  - brand-voice
+  - allergen-check
+  - reservations
+  - closing
 variables:
   restaurant_name: Sakura Sushi
   staff_transfer: the head chef      # overrides "the manager on duty" from sopc.yaml
-instructions: |
-  Sakura is an omakase and sushi counter in Manhattan. Reservations strongly recommended. No delivery.
 ```
 
-Running `sopc` in this folder (it compiles `sops/`) assembles `build/sakura-sushi.prompt.md` in this order:
+Running `sopc` in this folder (it compiles `sops/`) assembles `build/sakura-sushi.prompt.md` in that order:
 
 ```
-You are the phone host for Sakura Sushi...        ← bases/restaurant-host.md, name filled in
-Speak warmly and briefly...                       ← bases/brand-voice.md (every agent)
-Sakura is an omakase and sushi counter...         ← Sakura's own instructions
+Sakura is an omakase and sushi counter...         ← Sakura's own context
+You are the phone host for Sakura Sushi...        ← instructions/restaurant-host.md, name filled in
+Speak warmly and briefly...                       ← instructions/brand-voice.md
 
-## Procedures
-### Allergen check                               ← procedures/allergen-check.md (every agent)
-### Reservations                                 ← procedures/reservations.md (Sakura is on its list)
+## Procedures                                    ← before the first SOP
+### Allergen check                               ← procedures/allergen-check.md
+### Reservations                                 ← procedures/reservations.md
 
-Before hanging up, repeat the order total...      ← bases/closing.md (every agent, at the end)
+Before hanging up, repeat the order total...      ← instructions/closing.md, listed last
 ```
 
-No delivery section, because Sakura excluded it. No pizza context, because she doesn't inherit it. Tony's prompt gets both.
+No delivery section and no pizza context, because Sakura doesn't list them. Tony's lists both.
+
+Three restaurants deliver, and each needs the allergen check and the delivery procedure in that order. Rather than listing the pair three times, `sopc.yaml` names it as a group, and those agents list the group like a block; it expands in place:
+
+```yaml
+# sopc.yaml
+groups:
+  delivery-orders:
+    - allergen-check
+    - delivery-handling
+```
 
 ## An SOP
 
-SOPs are written in Markdown: settings in the front matter, then the name, the goal (`**Goal:**`), when it applies (`**When:**`), and the `## Steps`, `## Never` and `## Warning signs` lists. `procedures/reservations.md`:
+SOPs are written in Markdown: optional settings in the front matter, then the name, the goal (`**Goal:**`), when it applies (`**When:**`), and the `## Steps`, `## Never` and `## Warning signs` lists. `procedures/reservations.md`:
 
 ```markdown
----
-agents: [sakura-sushi, luigis-trattoria]
----
 # Reservations
 
 **Goal:** The customer has a confirmed table, or knows exactly why one isn't available.
@@ -102,38 +114,32 @@ agents: [sakura-sushi, luigis-trattoria]
 
 `` `tool: check_reservations` `` becomes "Use the `check_reservations` tool." and lists the tool in `build/lock.json`. Every SOP here uses the default `delivery: prompt`, so the whole SOP goes in the prompt; `auto` or `tool` would leave part of it out and have the agent fetch it with a `get_sop` tool, which this example agent doesn't register. `delivery-handling.yaml` shows the same format in YAML; `sopc convert --to md` rewrites YAML SOPs as Markdown, and `sopc fmt` keeps both tidy.
 
-## One restaurant needs a different version of a locked block
+## A block every restaurant must have
 
-La Casita wants every call in Spanish, but `brand-voice` is English and locked. An agent can't drop a locked block, so this fails:
+`allergen-check` is locked (`locked: true` in its front matter). Every agent must include it, directly or through a group, or the build fails. Take it out of Sakura's `blocks` and:
+
+```
+sops/agents/sakura-sushi.yaml: error [locked] 'allergen-check' is locked, so every agent must include it; add it to blocks (directly or through a group)
+```
+
+## One restaurant needs a different version of a block
+
+La Casita wants every call in Spanish. Its agent file lists `brand-voice-es` where the others list `brand-voice`:
 
 ```yaml
 # agents/la-casita.yaml
-exclude: [brand-voice]
-```
-```
-sops/agents/la-casita.yaml: error [locked] can't exclude 'brand-voice': it is locked
-```
-
-Instead, the exception is written into the locked block itself, and a Spanish version targets only La Casita:
-
-```markdown
-<!-- bases/brand-voice.md -->
-agents: "*"
-exclude: [la-casita]
-locked: true
-
-<!-- bases/brand-voice-es.md -->
-agents: [la-casita]
-locked: true
----
-Habla siempre en español, aunque el cliente empiece en inglés. ...
+blocks:
+  - restaurant-host
+  - brand-voice-es
+  - delivery-orders
+  - closing
 ```
 
-The exception shows up in review as a change to the locked file, which is where it belongs. `sopc plan` confirms it touches nothing else: adding La Casita reports "1 agent change: agent `la-casita` added", and the other three prompts are unchanged.
+Because a locked block has to be in every agent, neither brand voice is locked; the difference is visible in La Casita's file, where reviewers see it.
 
 ## How the agent uses it
 
-The same code runs for all three restaurants. Each deployment sets `AGENT_NAME`, which is both its LiveKit `agent_name` and the key for finding its prompt:
+The same code runs for every restaurant. Each deployment sets `AGENT_NAME`, which is both its LiveKit `agent_name` and the key for finding its prompt:
 
 ```ts
 // src/main.ts
@@ -152,7 +158,7 @@ The prompt is read from disk. There's no server and no network call, so it can't
 
 Say the team wants every agent to use the caller's name.
 
-1. **Edit the shared text once.** In `sops/bases/brand-voice.md`:
+1. **Edit the shared text once.** In `sops/instructions/brand-voice.md`:
    ```diff
    -Speak warmly and briefly. Ask one question at a time.
    +Speak warmly and briefly. Use the caller's name once you have it. Ask one question at a time.
@@ -162,7 +168,7 @@ Say the team wants every agent to use the caller's name.
    ```
    $ sopc plan
    3 agents change:
-     base `brand-voice` edited → 3 agents: luigis-trattoria, sakura-sushi, tonys-pizza
+     instruction `brand-voice` edited → 3 agents: luigis-trattoria, sakura-sushi, tonys-pizza
    ```
    followed by the exact diff of each prompt.
 
@@ -172,10 +178,10 @@ Say the team wants every agent to use the caller's name.
 
 5. **Merge and deploy each affected agent.** `lock.json` shows which agents changed; here it's all three. Each restaurant is its own LiveKit Cloud agent with `AGENT_NAME` set as a secret, so this means running `lk agent deploy` for Tony's, Luigi's and Sakura. Each restaurant's next calls run with the new prompt.
 
-If someone tries to remove the locked brand voice from an agent, `sopc validate` fails:
+If someone removes the locked allergen check from an agent, `sopc validate` fails:
 
 ```
-sops/agents/sakura-sushi.yaml: error [locked] can't exclude 'brand-voice': it is locked
+sops/agents/sakura-sushi.yaml: error [locked] 'allergen-check' is locked, so every agent must include it; add it to blocks (directly or through a group)
 ```
 
 ## Run it
@@ -194,7 +200,7 @@ AGENT_NAME=sakura-sushi npm run dev
 | | Without sopc | With this example |
 |---|---|---|
 | A change every restaurant needs | Edit every agent's prompt and hope none are missed | Edit one file; `sopc plan` lists every agent it reaches |
-| A change some restaurants need | Remember which ones | The SOP's `agents:` list or an agent's `inherits` decides |
+| A change some restaurants need | Remember which ones | Each agent's `blocks` list says which blocks it uses |
 | Reviewing a change | Read long prompt strings | Read a one-line source change plus the exact prompt diffs |
 | Rules nobody may drop | Rely on people | `locked: true`; validation fails otherwise |
 | Getting it live | Deploy each changed agent | Deploy each changed agent (no change) |

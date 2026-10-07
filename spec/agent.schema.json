@@ -1,6 +1,6 @@
 {
   "additionalProperties": false,
-  "description": "One voice agent, identified by its platform's own id. Written as agents/<id>.yaml.",
+  "description": "One voice agent, identified by its platform's own id: its own text (context) and the blocks it uses, in order. Written as agents/<id>.yaml.",
   "properties": {
     "id": {
       "description": "Alias used everywhere else in sopc: the file name without .yaml. Set automatically.",
@@ -59,20 +59,18 @@
       "description": "Retell agent_id. Set exactly one of livekit, vapi, elevenlabs, retell.",
       "title": "Retell"
     },
-    "inherits": {
-      "description": "Base ids to include, in order. Their parents come first.",
-      "items": {
-        "type": "string"
-      },
-      "title": "Inherits",
-      "type": "array"
+    "context": {
+      "default": "",
+      "description": "Text only this agent gets. It goes first in the prompt, before every block.",
+      "title": "Context",
+      "type": "string"
     },
-    "exclude": {
-      "description": "Ids of bases or SOPs that target this agent but shouldn't apply. Locked ones can't be excluded.",
+    "blocks": {
+      "description": "Instruction, SOP and group ids, in prompt order. A group expands in place. Each block may appear once, and every locked block must be included.",
       "items": {
         "type": "string"
       },
-      "title": "Exclude",
+      "title": "Blocks",
       "type": "array"
     },
     "variables": {
@@ -82,12 +80,6 @@
       "description": "Values for {{name}} placeholders. Override the defaults in sopc.yaml.",
       "title": "Variables",
       "type": "object"
-    },
-    "instructions": {
-      "default": "",
-      "description": "Text only this agent gets, placed after the top bases and before the SOPs.",
-      "title": "Instructions",
-      "type": "string"
     }
   },
   "title": "sopc agent: agents/<id>.yaml",

@@ -1,7 +1,6 @@
 ---
 # The allergen SOP of tests/fixtures/restaurants, in Markdown and not in canonical style:
 # sections out of order, a field and items wrapped over two lines, markers in either order.
-agents: "*"
 ---
 # Allergen check
 

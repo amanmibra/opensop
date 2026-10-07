@@ -1,11 +1,11 @@
 ---
 name: sopc-import
-description: Convert existing voice/task agent prompts (in code, or pulled read-only from LiveKit, ElevenLabs, Vapi or Retell) into sopc files (shared bases, SOPs, one file per agent), verify nothing was lost, and report conflicts. Asks the user to fill gaps and approve a short import plan before writing files, and again before committing. Use when the user asks to import, migrate, modularize or "sopc-ify" agent prompts or instructions, or invokes this skill (/sopc-import in Claude Code, $sopc-import in Codex).
+description: Convert existing voice/task agent prompts (in code, or pulled read-only from LiveKit, ElevenLabs, Vapi or Retell) into sopc files (shared instructions, SOPs, one file per agent listing the blocks it uses), verify nothing was lost, and report conflicts. Asks the user to fill gaps and approve a short import plan before writing files, and again before committing. Use when the user asks to import, migrate, modularize or "sopc-ify" agent prompts or instructions, or invokes this skill (/sopc-import in Claude Code, $sopc-import in Codex).
 ---
 
 # Import existing prompts into sopc
 
-You are turning a team's hand-written agent prompts into a sopc folder: shared text written once, procedures as SOPs, and a short file per agent. The compiled prompts must say everything the originals said. You do the judgment; the `sopc` CLI does the counting and checking; the user makes the decisions.
+You are turning a team's hand-written agent prompts into a sopc folder: shared text written once as instructions, procedures as SOPs, and a short file per agent with its own text and the list of blocks it uses, in prompt order. The compiled prompts must say everything the originals said. You do the judgment; the `sopc` CLI does the counting and checking; the user makes the decisions.
 
 The flow has two approval checkpoints:
 
@@ -84,7 +84,7 @@ Before writing any file in `sops/` (other than `sops/originals/`), show the user
 ```
 Import plan: 30 agents (LiveKit), sops/ at the repo root
 
-Bases (5)
+Instructions (5)
   restaurant-host   identity + what the host does          all 30
   brand-voice       tone, one question at a time           all 30   lock? (recommended)
   pizza-context     sizes, toppings, gluten-free note      12 pizza agents
@@ -97,7 +97,11 @@ SOPs (4)
   large-orders      12 agents
   delivery          26 agents   (4 don't deliver)
 
-Per agent: restaurant_name, hours, menu link become variables; 2–6 sentences stay in each agent's own instructions.
+Groups (2)
+  core              restaurant-host, brand-voice, allergy-policy   all 30, first
+  ordering          large-orders, delivery                          12 agents
+
+Per agent: restaurant_name, hours, menu link become variables; 2–6 sentences stay in each agent's own context (first in its prompt).
 
 Decisions needed
   1. Lock brand-voice and allergy-policy so no agent can drop them? (default: yes)
@@ -111,7 +115,7 @@ Decisions needed
 Then ask: **"OK to write these files? Answer the numbered decisions or say 'defaults'."** Wait for the answer. Apply their changes to the plan before writing.
 
 What belongs in "Decisions needed":
-- **Locks.** Never lock a block without the user's yes.
+- **Locks.** Never lock a block without the user's yes. A locked block must be in every agent, so only offer locks for blocks every agent has.
 - **Drift.** The same sentence with different values across agents. The default keeps each agent's current behavior (a variable with each agent's value) and records it as a conflict. Unify only if the user says so.
 - **Goals you'd have to invent.** Show the exact sentence you'd add.
 - **Unclear classification.** Passages that could be a procedure or plain text.
@@ -119,24 +123,53 @@ What belongs in "Decisions needed":
 
 ## 4. Write the sopc files
 
-Create `sops/sopc.yaml`, `sops/bases/`, `sops/procedures/`, `sops/agents/`, following the approved plan and the format reference.
+Create `sops/sopc.yaml`, `sops/instructions/`, `sops/procedures/`, `sops/agents/`, following the approved plan and the format reference.
+
+Blocks (instructions and SOPs) never say which agents use them. Each agent file lists its blocks, in the order the text appeared in that agent's original prompt:
 
 | Text in the originals | Goes to |
 |---|---|
-| Shared by every agent, not a procedure (identity, tone, policies) | A base with `agents: "*"` |
-| Shared by every agent and must never be dropped | A base with `agents: "*"` and `locked: true` (only if approved) |
-| Shared by a subset | A base those agents `inherits`, or a base with `agents: [ids]` |
-| A near-copy that differs only by a value (name, hours, phone number, link) | One shared sentence with a `{{placeholder}}`; each agent's value in its `variables` |
+| Shared, not a procedure (identity, tone, policies) | An instruction, `sops/instructions/<id>.md` (plain Markdown; front matter only for `locked: true`) |
+| Shared by every agent and must never be dropped | An instruction with `locked: true` (only if approved; it must then be in every agent) |
 | A procedure: a situation and what to do in it | An SOP (see below) |
-| Said only at the end of the call | A base with `position: bottom` |
-| Facts about one agent only | That agent's `instructions` |
+| The same blocks, in the same order, in many agents | A group in `sopc.yaml`; those agents list the group in `blocks` instead |
+| A near-copy that differs only by a value (name, hours, phone number, link) | One shared sentence with a `{{placeholder}}`; each agent's value in its `variables` |
+| Said only at the end of the call | An instruction each agent lists last |
+| Facts about one agent only | That agent's `context` |
+
+**Agents.** One file per agent, `sops/agents/<id>.yaml`: the platform id, then `context`, then `blocks` as a bullet list, one id per line, then `variables`:
+
+```yaml
+livekit: tonys-pizza
+context: |
+  Tony's is a wood-fired pizza shop in Brooklyn. Pickup only after 10pm.
+blocks:
+  - core
+  - pizza-context
+  - allergen-check
+  - ordering
+  - closing
+variables:
+  restaurant_name: Tony's Pizza
+```
+
+`context` goes first in the compiled prompt, before every block. If an original prompt had agent-specific text in the middle, it moves to the top; `compare` treats that as kept, but mention it in the summary. Each block may appear once per agent (directly or through a group).
+
+**Groups.** In `sops/sopc.yaml`, also as bullet lists:
+
+```yaml
+groups:
+  core:
+    - restaurant-host
+    - brand-voice
+    - allergy-policy
+```
+
+Use a group only for a run of blocks that many agents share in the same order; don't force one.
 
 **SOPs.** A passage is a procedure when it describes a situation and the steps to handle it ("If the caller wants to book a table, ask for…"). Write each one as Markdown, `sops/procedures/<id>.md`:
 
 ```markdown
----
-agents: [tonys-pizza, luigis-trattoria]
----
 # Reservations
 
 **Goal:** The customer has a confirmed table, or knows exactly why one isn't available.
@@ -155,7 +188,7 @@ Any other text from the passage goes here, as guidance.
 - The caller wants to book for more than 12; transfer to {{staff_transfer}} `tool: transfer_to_staff`
 ```
 
-- Front matter: settings only (`agents`: which agents had this procedure; `exclude`, `locked`, `delivery` if needed).
+- Front matter: settings only, and only if needed (`locked`, `delivery`). There is no `agents` field: the agents that had this procedure list it in their `blocks`.
 - `# ` name: a short title, the first line after the front matter.
 - `**When:**` the situation that triggers it, in the original's words. `**Goal:**` the goal: the original's words if it states one, otherwise the sentence the user approved.
 - `## Steps` (required, at least one): the ordered actions, in the original wording. `## Never`: "never / don't / do not" rules for this procedure. `## Warning signs`: "if the caller says X, transfer / escalate" rules. Only list items under these.
@@ -164,7 +197,7 @@ Any other text from the passage goes here, as guidance.
 
 **Rules while writing:**
 - Preserve wording. Don't improve, shorten or merge instructions during import; that's a separate, reviewed step. Allowed edits: replacing a value with a `{{placeholder}}`, and removing a sentence that a shared block now provides.
-- Don't drop anything. If you can't place a sentence, put it in that agent's `instructions`.
+- Don't drop anything. If you can't place a sentence, put it in that agent's `context`.
 - In YAML files (agents, `sopc.yaml`), quote any string containing `: ` (colon space), or use a `|` block.
 - Convert code placeholders like `${restaurantName}` to `{{restaurant_name}}` with a value per agent.
 
@@ -202,7 +235,7 @@ Run `sopc fmt` once more (then `sopc` if it changed anything) so the files are i
 ```
 Imported 30 agents into sops/
 
-  5 bases (2 locked), 4 SOPs, 30 agent files
+  5 instructions (2 locked), 4 SOPs, 2 groups, 30 agent files
   compare: all 30 agents pass (0 missing, 0 changed; 41 sentences reworded into SOP steps)
   added: 2 goals you approved
 
@@ -210,7 +243,7 @@ Conflicts to decide later (unchanged from today's behavior)
   1. upsell: "once" (29 agents) vs "twice" (luigis-trattoria), kept as a variable
   2. tonys-pizza says "pickup only after 10pm"; pizza-context says delivery until 11pm
 
-Files: sops/sopc.yaml, sops/bases/ (5), sops/procedures/ (4), sops/agents/ (30), sops/build/ (generated)
+Files: sops/sopc.yaml, sops/instructions/ (5), sops/procedures/ (4), sops/agents/ (30), sops/build/ (generated)
 Not included: sops/originals/ (your old prompts, for reference; delete or add to .gitignore)
 
 Commit these on a new branch and open a PR? (default: commit on branch sopc-import, don't push)

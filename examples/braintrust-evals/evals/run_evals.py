@@ -94,6 +94,9 @@ def build_at(ref: str, root: Path, tmp: Path) -> dict[str, Built] | None:
         base_root = worktree / root.resolve().relative_to(top.resolve())
         if not (base_root / "sopc.yaml").exists():
             return None
+        # A base from before `sopc migrate` is built as migrating it would (this worktree is a
+        # throwaway copy). Already-migrated folders, and sopc releases without migrate, skip this.
+        subprocess.run(["sopc", "migrate", "--dir", str(base_root), "--yes"], capture_output=True)
         return build(base_root, tmp / "base-build")
     finally:
         git("worktree", "remove", "--force", str(worktree))

@@ -53,7 +53,7 @@ pub struct AgentChange {
     pub agent: String,
     pub status: &'static str, // added | removed | changed
     pub platform_ref: String,
-    pub blocks: BTreeMap<String, &'static str>, // block → edited | added | removed
+    pub blocks: BTreeMap<String, &'static str>, // "kind:id" → edited | added | removed
     pub diff: String,
 }
 
@@ -127,7 +127,7 @@ fn label(block: &str) -> String {
         "workspace" => format!("`{id}`"),
         "sop" => format!("SOP `{id}`"),
         "agent" => format!("agent file `{id}`"),
-        _ => format!("base `{id}`"),
+        _ => format!("{kind} `{id}`"),
     }
 }
 
@@ -136,8 +136,8 @@ fn verb(block: &str, change: &str) -> &'static str {
         return "edited";
     }
     match change {
-        "added" => "now applies",
-        "removed" => "no longer applies",
+        "added" => "added",
+        "removed" => "removed",
         _ => "edited",
     }
 }
@@ -220,7 +220,7 @@ impl AffectedAgent {
             reason,
             changed: vec![],
             changed_sops: vec![],
-            sops: r.sops.iter().map(|s| s.id.clone()).collect(),
+            sops: r.sops().map(|s| s.id.clone()).collect(),
         }
     }
 
