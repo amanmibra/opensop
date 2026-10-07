@@ -8,7 +8,7 @@ use crate::workspace::Workspace;
 use regex::Regex;
 use serde_json::{json, Value as Json};
 use similar::{capture_diff_slices, Algorithm, DiffOp, DiffTag};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::LazyLock;
 
 static LIST_MARKER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(?:[-*+]|\d+[.)])\s+").unwrap());
@@ -376,7 +376,147 @@ impl Finding {
     }
 }
 
-fn conflict(a: &str, b: &str) -> Option<&'static str> {
+/// What `conflict` compares, worked out once per sentence: lint compares every pair.
+struct Unit {
+    /// Equal for units with the same `norm`.
+    norm_id: usize,
+    /// Word ids, for `similarity`; `sorted` is the same multiset, sorted.
+    words: Vec<u32>,
+    sorted: Vec<u32>,
+    negated: bool,
+    /// Word ids without negations and "always", for the negation check.
+    stripped: Vec<u32>,
+    stripped_sorted: Vec<u32>,
+    /// Numbers (number words as digits), and the text with each one as `#`.
+    numbers: Vec<String>,
+    /// The masked text with a space on each side, its length in chars, and its fields.
+    masked: String,
+    masked_chars: usize,
+    masked_fields: Vec<u32>,
+    masked_sorted: Vec<u32>,
+}
+
+/// Units by text, and word ids by word, shared by every agent in a lint run.
+#[derive(Default)]
+struct Units {
+    units: Vec<Unit>,
+    by_text: HashMap<String, usize>,
+    word_ids: HashMap<String, u32>,
+    norm_ids: HashMap<String, usize>,
+}
+
+impl Units {
+    fn id(&mut self, text: &str) -> usize {
+        if let Some(&i) = self.by_text.get(text) {
+            return i;
+        }
+        let mut word_id = |w: &String| -> u32 {
+            let next = self.word_ids.len() as u32;
+            *self.word_ids.entry(w.clone()).or_insert(next)
+        };
+        let ws = words(text);
+        let ids: Vec<u32> = ws.iter().map(&mut word_id).collect();
+        let stripped: Vec<u32> =
+            ws.iter().filter(|w| !NEGATIONS.contains(&w.as_str()) && *w != "always").map(&mut word_id).collect();
+        let norm = ws.join(" ");
+        let num = numerals(&norm);
+        let masked = NUMBER.replace_all(&num, "#").into_owned();
+        let next = self.norm_ids.len();
+        let norm_id = *self.norm_ids.entry(norm).or_insert(next);
+        let masked_fields: Vec<u32> = masked.split_whitespace().map(|f| word_id(&f.to_string())).collect();
+        let sorted_of = |v: &Vec<u32>| {
+            let mut v = v.clone();
+            v.sort_unstable();
+            v
+        };
+        let unit = Unit {
+            sorted: sorted_of(&ids),
+            words: ids,
+            negated: ws.iter().any(|w| NEGATIONS.contains(&w.as_str())),
+            stripped_sorted: sorted_of(&stripped),
+            stripped,
+            numbers: NUMBER.find_iter(&num).map(|m| m.as_str().to_string()).collect(),
+            masked_sorted: sorted_of(&masked_fields),
+            masked_fields,
+            masked_chars: masked.chars().count(),
+            masked: format!(" {masked} "),
+            norm_id,
+        };
+        self.units.push(unit);
+        self.by_text.insert(text.to_string(), self.units.len() - 1);
+        self.units.len() - 1
+    }
+}
+
+/// Whether `ratio` of two sequences with these sorted elements can reach `threshold`: matches
+/// can't exceed the elements they share.
+fn ratio_can_reach(a: &[u32], b: &[u32], threshold: f64) -> bool {
+    let total = (a.len() + b.len()) as f64;
+    if total == 0.0 || 2.0 * a.len().min(b.len()) as f64 / total < threshold {
+        return total == 0.0;
+    }
+    2.0 * shared(a, b) as f64 / total >= threshold
+}
+
+/// How many elements two sorted sequences share, counting repeats.
+fn shared(a: &[u32], b: &[u32]) -> usize {
+    let (mut i, mut j, mut n) = (0, 0, 0);
+    while i < a.len() && j < b.len() {
+        match a[i].cmp(&b[j]) {
+            std::cmp::Ordering::Less => i += 1,
+            std::cmp::Ordering::Greater => j += 1,
+            std::cmp::Ordering::Equal => (n, i, j) = (n + 1, i + 1, j + 1),
+        }
+    }
+    n
+}
+
+/// What `conflict` returns for the units' texts, skipping comparisons that can't succeed.
+fn unit_conflict(a: &Unit, b: &Unit) -> Option<&'static str> {
+    if a.norm_id == b.norm_id {
+        return Some("duplicate_text");
+    }
+    if !a.numbers.is_empty() && !b.numbers.is_empty() && a.numbers != b.numbers && masked_match(a, b) {
+        return Some("numeric_conflict");
+    }
+    if a.negated != b.negated
+        && !a.stripped.is_empty()
+        && ratio_can_reach(&a.stripped_sorted, &b.stripped_sorted, 0.9)
+        && ratio(&a.stripped, &b.stripped) >= 0.9
+    {
+        return Some("negation_conflict");
+    }
+    if ratio_can_reach(&a.sorted, &b.sorted, 0.85) && ratio(&a.words, &b.words) >= 0.85 {
+        return Some("near_duplicate");
+    }
+    None
+}
+
+/// The second half of `numbers_differ_in_same_sentence`, on precomputed texts.
+fn masked_match(a: &Unit, b: &Unit) -> bool {
+    let (short, long) = if b.masked_chars < a.masked_chars { (b, a) } else { (a, b) };
+    if a.masked == b.masked {
+        return true;
+    }
+    // Containment needs every field of the shorter text in the longer one.
+    let n = short.masked_fields.len();
+    if n >= 3 && shared(&short.masked_sorted, &long.masked_sorted) == n && long.masked.contains(&short.masked) {
+        return true;
+    }
+    ratio_can_reach(&a.masked_sorted, &b.masked_sorted, 0.8) && ratio(&a.masked_fields, &b.masked_fields) >= 0.8
+}
+
+/// `unit_conflict` on two texts, to compare with `conflict` in tests.
+#[cfg(test)]
+pub fn fast_conflict(a: &str, b: &str) -> Option<&'static str> {
+    let mut units = Units::default();
+    let (i, j) = (units.id(a), units.id(b));
+    unit_conflict(&units.units[i], &units.units[j])
+}
+
+/// The direct definition `unit_conflict` must agree with; tests compare the two.
+#[cfg(test)]
+pub fn conflict(a: &str, b: &str) -> Option<&'static str> {
     let (na, nb) = (norm(a), norm(b));
     if na == nb {
         return Some("duplicate_text");
@@ -422,6 +562,7 @@ fn numerals(norm: &str) -> String {
     words.collect::<Vec<_>>().join(" ")
 }
 
+#[cfg(test)]
 fn numbers_differ_in_same_sentence(na: &str, nb: &str) -> bool {
     let (na, nb) = (&numerals(na), &numerals(nb));
     let nums = |s: &str| -> Vec<String> { NUMBER.find_iter(s).map(|m| m.as_str().to_string()).collect() };
@@ -473,39 +614,64 @@ fn agent_texts(ws: &Workspace, agent: &Agent, split: bool) -> Vec<(String, Strin
 
 /// Duplicated text and mechanical conflicts within each agent's prompt, and unused variables.
 pub fn lint(ws: &Workspace) -> Vec<Finding> {
-    let mut findings: Vec<(String, Finding)> = vec![];
+    let mut units = Units::default();
+    lint_with(ws, |sourced| {
+        let ids: Vec<usize> = sourced.iter().map(|(_, t)| units.id(t)).collect();
+        pairs(ids.len(), |i, j| unit_conflict(&units.units[ids[i]], &units.units[ids[j]]))
+    })
+}
+
+/// `lint` comparing every pair with `conflict` directly: the reference the fast one must match.
+#[cfg(test)]
+pub fn lint_naive(ws: &Workspace) -> Vec<Finding> {
+    lint_with(ws, |sourced| pairs(sourced.len(), |i, j| conflict(&sourced[i].1, &sourced[j].1)))
+}
+
+/// (i, j, code) for every i < j that `compare` finds a conflict in, in order.
+fn pairs(n: usize, compare: impl Fn(usize, usize) -> Option<&'static str>) -> Vec<(usize, usize, &'static str)> {
+    let mut out = vec![];
+    for i in 0..n {
+        out.extend((i + 1..n).filter_map(|j| compare(i, j).map(|code| (i, j, code))));
+    }
+    out
+}
+
+/// Lint, given what conflicts among an agent's (block, text) pairs.
+fn lint_with(
+    ws: &Workspace,
+    mut conflicts: impl FnMut(&[(String, String)]) -> Vec<(usize, usize, &'static str)>,
+) -> Vec<Finding> {
+    let mut findings: Vec<Finding> = vec![];
+    let mut index: HashMap<String, usize> = HashMap::new(); // key → position in findings
     let mut agents: Vec<&Agent> = ws.agents.iter().collect();
     agents.sort_by(|a, b| a.id.cmp(&b.id));
     for agent in agents {
         let values = ws.config.variables.merged(&agent.variables);
         let sourced: Vec<(String, String)> =
             agent_texts(ws, agent, true).into_iter().map(|(b, t)| (b, fill_variables(&t, &values))).collect();
-        for (i, a) in sourced.iter().enumerate() {
-            for b in &sourced[i + 1..] {
-                let Some(code) = conflict(&a.1, &b.1) else { continue };
-                if code == "near_duplicate" && a.0 == b.0 {
-                    continue;
-                }
-                let key = [code, &a.0, &norm(&a.1), &b.0, &norm(&b.1)].join("\0");
-                match findings.iter_mut().find(|(k, _)| *k == key) {
-                    Some((_, f)) => f.agents.push(agent.id.clone()),
-                    None => {
-                        let message = match code {
-                            "duplicate_text" => "Same sentence appears twice in the prompt",
-                            "numeric_conflict" => "Same sentence with different numbers",
-                            "negation_conflict" => "One block says it, another says the opposite",
-                            _ => "Nearly identical sentences; a copy that drifted?",
-                        };
-                        let f = Finding {
-                            code,
-                            message: message.into(),
-                            sources: vec![a.clone(), b.clone()],
-                            agents: vec![agent.id.clone()],
-                        };
-                        findings.push((key, f));
-                    }
-                }
+        for (i, j, code) in conflicts(&sourced) {
+            let (a, b) = (&sourced[i], &sourced[j]);
+            if code == "near_duplicate" && a.0 == b.0 {
+                continue;
             }
+            let key = [code, &a.0, &norm(&a.1), &b.0, &norm(&b.1)].join("\0");
+            if let Some(&n) = index.get(&key) {
+                findings[n].agents.push(agent.id.clone());
+                continue;
+            }
+            let message = match code {
+                "duplicate_text" => "Same sentence appears twice in the prompt",
+                "numeric_conflict" => "Same sentence with different numbers",
+                "negation_conflict" => "One block says it, another says the opposite",
+                _ => "Nearly identical sentences; a copy that drifted?",
+            };
+            index.insert(key, findings.len());
+            findings.push(Finding {
+                code,
+                message: message.into(),
+                sources: vec![a.clone(), b.clone()],
+                agents: vec![agent.id.clone()],
+            });
         }
         let used: BTreeSet<String> =
             agent_texts(ws, agent, false).iter().flat_map(|(_, t)| find_variables(t)).collect();
@@ -513,20 +679,19 @@ pub fn lint(ws: &Workspace) -> Vec<Finding> {
             agent.variables.0.iter().map(|(k, _)| k).filter(|k| !used.contains(*k)).collect();
         for name in unused {
             let key = format!("unused_variable\0{}\0{name}", agent.id);
-            if !findings.iter().any(|(k, _)| *k == key) {
-                findings.push((
-                    key,
-                    Finding {
-                        code: "unused_variable",
-                        message: format!("'{name}' is set but no block this agent uses mentions {{{{{name}}}}}"),
-                        sources: vec![(format!("agent `{}`", agent.id), name.clone())],
-                        agents: vec![agent.id.clone()],
-                    },
-                ));
+            if index.contains_key(&key) {
+                continue;
             }
+            index.insert(key, findings.len());
+            findings.push(Finding {
+                code: "unused_variable",
+                message: format!("'{name}' is set but no block this agent uses mentions {{{{{name}}}}}"),
+                sources: vec![(format!("agent `{}`", agent.id), name.clone())],
+                agents: vec![agent.id.clone()],
+            });
         }
     }
-    findings.into_iter().map(|(_, f)| f).collect()
+    findings
 }
 
 pub fn lint_text(findings: &[Finding]) -> String {

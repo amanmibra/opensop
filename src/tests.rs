@@ -853,6 +853,106 @@ fn check_finds_a_number_conflict_inside_a_longer_sentence() {
     assert_eq!(findings[0].code, "numeric_conflict");
 }
 
+/// Deterministic sentences: random words, some numbers, and near-copies of earlier ones with a
+/// word swapped, a number changed, a negation added or removed, or text around them.
+fn generated_sentences(n: usize) -> Vec<String> {
+    const WORDS: &[&str] = &[
+        "customer", "order", "table", "menu", "item", "delivery", "address", "card", "refund", "allergy", "guest",
+        "booking", "time", "party", "manager", "staff", "kitchen", "drink", "coupon", "phone", "name", "receipt",
+        "pickup", "confirm", "check", "ask", "tell", "offer", "repeat", "transfer", "the", "to", "and", "always", "pm",
+        "minutes", "two", "ten", "once",
+    ];
+    const OPENERS: &[&str] = &["Always", "Never", "Do not", "Please", "Only", "Don't", "You cannot", "Make sure to"];
+    let mut seed: u64 = 7;
+    let mut next = move |n: usize| {
+        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((seed >> 33) as usize) % n
+    };
+    let mut out: Vec<String> = vec![];
+    for _ in 0..n {
+        let s = if !out.is_empty() && next(3) == 0 {
+            let base = out[next(out.len())].trim_end_matches('.').to_string();
+            let mut ws: Vec<String> = base.split(' ').map(String::from).collect();
+            match next(6) {
+                0 => {
+                    let i = next(ws.len());
+                    ws[i] = WORDS[next(WORDS.len())].to_string();
+                }
+                1 => ws.push(next(90).to_string()),
+                2 => ws.insert(1, "never".into()),
+                3 => ws.retain(|w| !["Never", "not", "never", "Don't"].contains(&w.as_str())),
+                4 => ws.extend(["and", "then", "ask"].map(String::from)),
+                _ => ws.iter_mut().filter(|w| w.chars().all(|c| c.is_ascii_digit())).for_each(|w| *w = "11:30".into()),
+            }
+            ws.join(" ")
+        } else {
+            let mut ws = vec![OPENERS[next(OPENERS.len())].to_string()];
+            ws.extend((0..3 + next(12)).map(|_| WORDS[next(WORDS.len())].to_string()));
+            if next(3) == 0 {
+                ws.insert(1 + next(ws.len() - 1), next(40).to_string());
+            }
+            ws.join(" ")
+        };
+        out.push(s + ".");
+    }
+    out
+}
+
+#[test]
+fn lint_conflicts_match_the_direct_definition() {
+    let sentences = generated_sentences(200);
+    let mut codes: BTreeMap<&str, usize> = BTreeMap::new();
+    for (i, a) in sentences.iter().enumerate() {
+        for b in &sentences[i + 1..] {
+            let want = crate::analyze::conflict(a, b);
+            assert_eq!(crate::analyze::fast_conflict(a, b), want, "{a:?} vs {b:?}");
+            *codes.entry(want.unwrap_or("none")).or_default() += 1;
+        }
+    }
+    // Every code is exercised.
+    for code in ["duplicate_text", "numeric_conflict", "negation_conflict", "near_duplicate", "none"] {
+        assert!(codes.get(code).is_some_and(|n| *n > 3), "{code}: {codes:?}");
+    }
+}
+
+#[test]
+fn lint_matches_the_naive_lint_on_a_generated_workspace() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let sentences = generated_sentences(150);
+    let mut chunks = sentences.chunks(4);
+    std::fs::write(root.join("sopc.yaml"), "version: 1\n").unwrap();
+    for sub in ["instructions", "procedures", "agents"] {
+        std::fs::create_dir(root.join(sub)).unwrap();
+    }
+    for i in 0..25 {
+        std::fs::write(root.join(format!("instructions/i{i}.md")), chunks.next().unwrap().join(" ") + "\n").unwrap();
+    }
+    for i in 0..10 {
+        let steps: Vec<String> = chunks.next().unwrap().iter().map(|s| s.trim_end_matches('.').to_string()).collect();
+        let body = format!(
+            "# P{i}\n\n**Goal:** Done well.\n**When:** Asked.\n\n## Steps\n1. {}\n\n## Never\n- {}\n",
+            steps[..3].join("\n1. "),
+            steps[3]
+        );
+        std::fs::write(root.join(format!("procedures/p{i}.md")), body).unwrap();
+    }
+    for a in 0..8 {
+        let blocks: Vec<String> = (0..25)
+            .filter(|i| (i * 7 + a * 3) % 5 < 3)
+            .map(|i| format!("  - i{i}"))
+            .chain((0..10).filter(|i| (i + a) % 3 != 0).map(|i| format!("  - p{i}")))
+            .collect();
+        let text = format!("livekit: a{a}\ncontext: |\n  {}\nblocks:\n{}\n", sentences[a * 5], blocks.join("\n"));
+        std::fs::write(root.join(format!("agents/a{a:02}.yaml")), text).unwrap();
+    }
+    let ws = ws(root);
+    let json = |fs: Vec<crate::analyze::Finding>| fs.iter().map(|f| f.to_json()).collect::<Vec<_>>();
+    let (fast, naive) = (json(lint(&ws)), json(crate::analyze::lint_naive(&ws)));
+    assert!(fast.len() > 20, "{}", fast.len());
+    assert_eq!(fast, naive);
+}
+
 #[test]
 fn units_split_sentences_and_drop_labels() {
     let got = units("## Heading\nSteps:\n1. Ask the caller. Then check! Okay? yes no\n- Goal: Keep it short. \"Quoted start\" here\n  two words\n");
