@@ -9,6 +9,7 @@ sopc is the format for writing, versioning and building agent instructions, plus
 - **`plan`.** Which agents a change touches and because of which block, with a prompt diff per agent.
 - **`lint`.** Duplicated text, number conflicts, "always X" vs "never X", unused variables.
 - **Import.** The `/sopc-import` skill for coding agents, with `overlap` and `compare` to prove nothing was lost.
+- **`verify`.** Compares each agent's live prompt on ElevenLabs, Vapi or Retell with the compiled one, to catch dashboard hotfixes that git doesn't have ([drift check](examples/drift-check)).
 - **LiveKit example.** A TypeScript agent that loads its prompt from the build, with mock tools ([examples/livekit-restaurant](examples/livekit-restaurant)).
 
 ## Next
@@ -17,6 +18,7 @@ sopc is the format for writing, versioning and building agent instructions, plus
 2. **More checks.** Vague or uncheckable rules, prompt length per agent.
 
 3. **`sopc test`.** Test cases kept in the repo (caller turns, mock tool results, what a good agent does), run against just the agents a change affects, the way `dbt test` runs on the models a change touches. The [behavior gate](examples/behavior-gate) and [Braintrust example](examples/braintrust-evals) are the manual version today; grading itself would come from sopqa.
+4. **Hotfix backfill.** When `verify` finds drift, open a pull request that writes the live prompt's change back into the right block, so a dashboard hotfix becomes a reviewed change instead of being reverted by the next deploy.
 
 Beyond that, the next steps come from teams using it.
 

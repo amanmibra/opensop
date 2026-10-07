@@ -62,12 +62,14 @@ pub struct Plan {
 }
 
 fn unified_diff(old: &str, new: &str, id: &str) -> String {
+    labelled_diff(old, new, &format!("a/{id}.prompt.md"), &format!("b/{id}.prompt.md"))
+}
+
+/// A unified diff of two texts, with 3 lines of context and the given `---`/`+++` labels.
+pub fn labelled_diff(old: &str, new: &str, old_label: &str, new_label: &str) -> String {
     let diff = TextDiff::from_lines(old, new);
     let mut udiff = diff.unified_diff();
-    udiff
-        .context_radius(3)
-        .missing_newline_hint(false)
-        .header(&format!("a/{id}.prompt.md"), &format!("b/{id}.prompt.md"));
+    udiff.context_radius(3).missing_newline_hint(false).header(old_label, new_label);
     udiff.to_string()
 }
 
@@ -310,7 +312,7 @@ pub fn affected(
 }
 
 /// Maps sopc ids, platform refs and platform ids to sopc ids.
-fn resolve_requested(head: &Build, requested: &[String]) -> Result<Vec<String>, Issues> {
+pub fn resolve_requested(head: &Build, requested: &[String]) -> Result<Vec<String>, Issues> {
     let mut lookup: BTreeMap<String, String> = BTreeMap::new();
     for (id, r) in &head.agents {
         lookup.insert(r.agent.platform_ref(), id.clone());

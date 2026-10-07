@@ -16,6 +16,7 @@ mod plan;
 mod render;
 mod sopfile;
 mod text;
+mod verify;
 mod workspace;
 
 #[cfg(test)]
@@ -242,6 +243,22 @@ enum Command {
         /// Folder with <agent-id>.md or .txt originals
         #[arg(long)]
         originals: PathBuf,
+    },
+    /// Compare each agent's live prompt on its platform with the compiled one (catches dashboard hotfixes)
+    #[command(
+        after_help = docs!("verify"),
+        after_long_help = examples!("verify", "  sopc verify                  Every agent; exit 1 if a live prompt drifted
+  sopc verify tonys-pizza      Only these agents (sopc ids or platform ids)
+  sopc verify --json           Machine-readable report (for CI)
+
+Keys are read from ELEVENLABS_API_KEY, VAPI_API_KEY and RETELL_API_KEY. Only GET requests are sent.")
+    )]
+    Verify {
+        /// Agents to verify (sopc ids, platform ids or platform:id) [default: every agent]
+        ids: Vec<String>,
+        /// Machine-readable output
+        #[arg(long)]
+        json: bool,
     },
     /// Install the sopc skills for coding agents
     #[command(
@@ -543,6 +560,21 @@ fn run(command: Command, dir: Option<PathBuf>) -> anyhow::Result<ExitCode> {
                 SopFormat::Yaml => Kind::Yaml,
             };
             return convert(&root, to, &ids, yes);
+        }
+        Command::Verify { ids, json } => {
+            let root = root()?;
+            let build = build(&root)?;
+            let requested: Vec<String> = ids.join(" ").replace(',', " ").split_whitespace().map(String::from).collect();
+            let ids = if requested.is_empty() { vec![] } else { plan::resolve_requested(&build, &requested)? };
+            let n = if ids.is_empty() { build.agents.len() } else { ids.len() };
+            eprintln!("Verifying {n} agent(s) against their platforms");
+            let report = verify::verify(&build, &ids);
+            if json {
+                println!("{}", pretty_json(&report.to_json(), true));
+            } else {
+                print!("{}", report.text());
+            }
+            return Ok(if report.ok() { ExitCode::SUCCESS } else { ExitCode::FAILURE });
         }
         Command::Skills { action: SkillsAction::Install, agent, into } => install_skills(&agent, into)?,
         Command::Guide => print!("{FORMAT_MD}"),

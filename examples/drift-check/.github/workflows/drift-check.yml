@@ -1,0 +1,42 @@
+name: drift check
+
+# Every night, compares each agent's live prompt on ElevenLabs, Vapi and Retell with the one
+# compiled from this repo, and fails if they differ. A failure means someone edited a prompt in a
+# platform's dashboard; the next deploy would undo that edit unless it's copied into the sopc files.
+on:
+  schedule:
+    - cron: "0 6 * * *" # 06:00 UTC daily
+  workflow_dispatch: # run it by hand from the Actions tab
+
+permissions:
+  contents: read
+
+env:
+  SOPC_ROOT: "" # your sopc folder; blank = sops/ (or the repo root if sopc.yaml is there)
+  SOPC_VERSION: "" # a sopc release tag with `verify`; blank = the latest release
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # the default branch: what the next deploy would ship
+
+      - name: Install sopc
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/amanmibra/sopc/main/install.sh | SOPC_REF="$SOPC_VERSION" sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Compare live prompts with the build
+        env:
+          # Only the platforms you use; an agent whose key is missing fails the run.
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          VAPI_API_KEY: ${{ secrets.VAPI_API_KEY }}
+          RETELL_API_KEY: ${{ secrets.RETELL_API_KEY }}
+        run: |
+          set -o pipefail
+          sopc verify ${SOPC_ROOT:+--dir "$SOPC_ROOT"} | tee verify.txt
+      - name: Summary
+        if: always()
+        run: |
+          [ -f verify.txt ] || exit 0
+          { echo '### Prompt drift'; echo; echo '```diff'; cat verify.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
