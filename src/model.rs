@@ -8,7 +8,7 @@
 use serde_json::{json, Value as Json};
 use serde_yaml_ng::{Mapping, Value};
 
-pub const PLATFORMS: [&str; 3] = ["livekit", "vapi", "elevenlabs"];
+pub const PLATFORMS: [&str; 4] = ["livekit", "vapi", "elevenlabs", "retell"];
 pub const POSITIONS: [&str; 2] = ["top", "bottom"];
 pub const DELIVERIES: [&str; 3] = ["prompt", "auto", "tool"];
 
@@ -28,7 +28,7 @@ pub const SOP_FIELDS: &[&str] = &[
     "warningSigns",
 ];
 pub const AGENT_FIELDS: &[&str] =
-    &["id", "livekit", "vapi", "elevenlabs", "inherits", "exclude", "variables", "instructions"];
+    &["id", "livekit", "vapi", "elevenlabs", "retell", "inherits", "exclude", "variables", "instructions"];
 pub const CONFIG_FIELDS: &[&str] = &["version", "variables", "sops_heading", "sop_order"];
 pub const STEP_FIELDS: &[&str] = &["text", "tool", "required"];
 /// Fields a file must set ("id" and a base's "text" are filled in by the loader).
@@ -113,7 +113,7 @@ impl Vars {
 #[derive(Clone, Debug, Default)]
 pub struct Agent {
     pub id: String,
-    pub platforms: [Option<String>; 3], // livekit, vapi, elevenlabs
+    pub platforms: [Option<String>; 4], // livekit, vapi, elevenlabs, retell
     pub inherits: Vec<String>,
     pub exclude: Vec<String>,
     pub variables: Vars,
@@ -198,13 +198,17 @@ impl Sop {
 impl Agent {
     pub fn canonical_json(&self) -> String {
         let vars: serde_json::Map<String, Json> = self.variables.0.iter().map(|(k, v)| (k.clone(), json!(v))).collect();
-        let [livekit, vapi, elevenlabs] = &self.platforms;
-        json!({
+        let [livekit, vapi, elevenlabs, retell] = &self.platforms;
+        let mut out = json!({
             "id": self.id, "livekit": livekit, "vapi": vapi, "elevenlabs": elevenlabs,
             "inherits": self.inherits, "exclude": self.exclude, "variables": vars,
             "instructions": self.instructions,
-        })
-        .to_string()
+        });
+        // Added after the others: only present when set, so existing agents keep their hashes.
+        if retell.is_some() {
+            out.as_object_mut().unwrap().insert("retell".into(), json!(retell));
+        }
+        out.to_string()
     }
 }
 

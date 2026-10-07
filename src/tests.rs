@@ -139,6 +139,16 @@ fn platform_ref_can_be_used_in_targeting() {
 }
 
 #[test]
+fn retell_agents() {
+    let r = Repo::new();
+    let before = build(r.root());
+    r.edit("agents/sakura-sushi.yaml", "livekit: sakura-sushi", "retell: agent_7c1");
+    let after = build(r.root());
+    assert_eq!(after.lock()["agents"]["sakura-sushi"]["platform_ref"], "retell:agent_7c1");
+    assert!(changed_agents(&before, &after).is_empty());
+}
+
+#[test]
 fn unset_variable() {
     let r = Repo::new();
     r.edit("agents/luigis-trattoria.yaml", "  menu_allergen_link: luigis.com/menu#allergens\n", "");
@@ -424,7 +434,9 @@ fn canonical_json_follows_field_order_and_keeps_non_ascii() {
     };
     assert_eq!(keys(base.canonical_json()), BASE_FIELDS);
     assert_eq!(keys(Sop::default().canonical_json()), SOP_FIELDS);
-    assert_eq!(keys(Agent::default().canonical_json()), AGENT_FIELDS);
+    // `retell` was added later, so it's left out unless set (existing agents keep their hashes).
+    let older: Vec<&str> = AGENT_FIELDS.iter().copied().filter(|f| *f != "retell").collect();
+    assert_eq!(keys(Agent::default().canonical_json()), older);
 }
 
 // --- plan and affected ------------------------------------------------------------------------------

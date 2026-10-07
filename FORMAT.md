@@ -193,7 +193,7 @@ Use `prompt` unless the agent is set up with a `get_sop` tool. Forbidden actions
 ## agents/\<id\>.yaml
 
 ```yaml
-livekit: tonys-pizza                 # exactly one of livekit | vapi | elevenlabs
+livekit: tonys-pizza                 # exactly one of livekit | vapi | elevenlabs | retell
 inherits: [pizza-context]
 exclude: [delivery-handling]
 variables:
@@ -207,6 +207,7 @@ instructions: |
 | `livekit` | string | — | LiveKit `agent_name`. |
 | `vapi` | string | — | Vapi assistant id. |
 | `elevenlabs` | string | — | ElevenLabs `agent_id`. |
+| `retell` | string | — | Retell `agent_id`. |
 | `inherits` | list of base ids | `[]` | Bases to include, in order. |
 | `exclude` | list of ids | `[]` | Bases or SOPs that target this agent but shouldn't apply. Locked ones can't be excluded. |
 | `variables` | map | `{}` | Values for `{{placeholders}}`. Override `sopc.yaml` defaults. |

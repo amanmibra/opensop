@@ -17,7 +17,7 @@
         }
       ],
       "default": null,
-      "description": "LiveKit agent_name. Set exactly one of livekit, vapi, elevenlabs.",
+      "description": "LiveKit agent_name. Set exactly one of livekit, vapi, elevenlabs, retell.",
       "title": "Livekit"
     },
     "vapi": {
@@ -30,7 +30,7 @@
         }
       ],
       "default": null,
-      "description": "Vapi assistant id. Set exactly one of livekit, vapi, elevenlabs.",
+      "description": "Vapi assistant id. Set exactly one of livekit, vapi, elevenlabs, retell.",
       "title": "Vapi"
     },
     "elevenlabs": {
@@ -43,8 +43,21 @@
         }
       ],
       "default": null,
-      "description": "ElevenLabs agent_id. Set exactly one of livekit, vapi, elevenlabs.",
+      "description": "ElevenLabs agent_id. Set exactly one of livekit, vapi, elevenlabs, retell.",
       "title": "Elevenlabs"
+    },
+    "retell": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Retell agent_id. Set exactly one of livekit, vapi, elevenlabs, retell.",
+      "title": "Retell"
     },
     "inherits": {
       "description": "Base ids to include, in order. Their parents come first.",

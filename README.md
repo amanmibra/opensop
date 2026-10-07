@@ -47,7 +47,7 @@ For Codex, use `-o .agents/skills/sopc-import/SKILL.md` instead. OpenCode reads 
 | Codex | `$sopc-import` (or pick it from `/skills`) |
 | OpenCode | ask it to "use the sopc-import skill" |
 
-The skill installs the `sopc` CLI if it's missing, finds your existing prompts (in code, files or a platform dashboard), turns them into sopc files, checks that nothing was lost, and asks you to approve a one-screen plan before it writes anything.
+The skill installs the `sopc` CLI if it's missing, finds your existing prompts (in code or files, or pulls them read-only from LiveKit, ElevenLabs, Vapi or Retell, helping you set up a key or MCP if needed), turns them into sopc files, checks that nothing was lost, and asks you to approve a one-screen plan before it writes anything.
 
 <details>
 <summary>What the import does, step by step</summary>

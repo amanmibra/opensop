@@ -1,6 +1,6 @@
 ---
 name: sopc-import
-description: Convert existing voice/task agent prompts into sopc files (shared bases, SOPs, one file per agent), verify nothing was lost, and report conflicts. Asks the user to fill gaps and approve a short import plan before writing files, and again before committing. Use when the user asks to import, migrate, modularize or "sopc-ify" agent prompts or instructions, or invokes this skill (/sopc-import in Claude Code, $sopc-import in Codex).
+description: Convert existing voice/task agent prompts (in code, or pulled read-only from LiveKit, ElevenLabs, Vapi or Retell) into sopc files (shared bases, SOPs, one file per agent), verify nothing was lost, and report conflicts. Asks the user to fill gaps and approve a short import plan before writing files, and again before committing. Use when the user asks to import, migrate, modularize or "sopc-ify" agent prompts or instructions, or invokes this skill (/sopc-import in Claude Code, $sopc-import in Codex).
 ---
 
 # Import existing prompts into sopc
@@ -37,16 +37,34 @@ This skill needs the `sopc` command. Set it up without making the user do anythi
 
 ## 1. Collect the originals
 
-Find every agent's current prompt: strings in code, prompt files, a database, or a platform dashboard (Vapi, ElevenLabs, LiveKit).
+**First, ask where the agents run** (skip if the code already makes it obvious): LiveKit, Vapi, ElevenLabs, Retell, or prompts kept in code / files / a database. A team can use more than one.
+
+Then get every agent's current prompt. Pull it from the platform when you can, so the user doesn't copy and paste. Only **read** from a platform: never create, update, publish or delete anything there.
+
+| Platform | Where the prompts are | How to read them (first one that's set up) | Platform id for `agents/<id>.yaml` |
+|---|---|---|---|
+| LiveKit | In the agent's code (`instructions=`). Agent Builder agents: the user exports the code from the LiveKit Cloud dashboard. | Read the repo. | `livekit:` the `agent_name` |
+| ElevenLabs | `conversation_config.agent.prompt.prompt` | 1. ElevenLabs MCP (`list_agents`, `get_agent`) if connected. 2. CLI: `npm i -g @elevenlabs/cli`, `elevenlabs auth login`, then `elevenlabs agents pull` in a scratch folder. 3. API: `GET https://api.elevenlabs.io/v1/convai/agents` and `/v1/convai/agents/<agent_id>` with header `xi-api-key: $ELEVENLABS_API_KEY`. | `elevenlabs:` the `agent_id` |
+| Vapi | The `system` message in the assistant's `model.messages` | 1. Vapi MCP (`@vapi-ai/mcp-server`) if connected. 2. CLI: `vapi login`, `vapi assistant list`, `vapi assistant get <id>`. 3. API: `GET https://api.vapi.ai/assistant` and `/assistant/<id>` with `Authorization: Bearer $VAPI_API_KEY` (the private key). | `vapi:` the assistant id |
+| Retell | Retell LLM `general_prompt` (plus `states[].state_prompt` for multi-state agents) | 1. Retell MCP if connected. 2. API: `GET https://api.retellai.com/list-agents`, then for each agent with `response_engine.type: retell-llm`, `GET /get-retell-llm/<llm_id>`, with `Authorization: Bearer $RETELL_API_KEY`. | `retell:` the `agent_id` |
+
+**If nothing is set up, tell the user how, and wait.** Offer the easiest option for their tools:
+- Claude Code with Retell: `claude mcp add --transport http retell https://mcp.retellai.com --header "Authorization: Bearer <RETELL_API_KEY>"`, then restart the session.
+- ElevenLabs or Vapi: install the CLI and log in (commands above). Login opens a browser; the user runs it themselves (in Claude Code: `! elevenlabs auth login` or `! vapi login`).
+- Otherwise, an API key in an environment variable (`ELEVENLABS_API_KEY`, `VAPI_API_KEY`, `RETELL_API_KEY`), set in the user's shell profile or a `.env` file that's gitignored. Then restart the session so you can see it.
+
+Keys: never ask the user to paste a key into the chat, never print one, and never write one into a file you create. Read-only keys are enough if the platform offers them. If the user can't set any of this up, fall back to asking them to export or paste the prompts.
+
+Some agents aren't one prompt: ElevenLabs workflows, Vapi squads or workflows, Retell conversation flows (`response_engine.type: conversation-flow`) and multi-state Retell LLMs. sopc compiles one prompt per agent, so list these in the plan as "not imported" with the reason, unless the user wants the main prompt imported alone. Also note per agent what lives outside the prompt (first message, voice, model, tools); sopc doesn't manage those, so leave them on the platform.
 
 For each agent:
-- Choose an id: lowercase kebab-case, ideally the platform's own name for it (LiveKit `agent_name`).
-- Copy the prompt **verbatim** into `sops/originals/<id>.md`. Resolve string concatenation or templating in code so the file is the text the model actually receives. Keep code placeholders (e.g. `${restaurantName}`) for now.
-- Note the platform and platform id (LiveKit `agent_name`, Vapi assistant id, ElevenLabs agent_id).
-- Note tool names the agent code registers, so SOP steps can reference them.
+- Choose an id: lowercase kebab-case, ideally the platform's own name for it (LiveKit `agent_name`, or the agent's display name on other platforms).
+- Copy the prompt **verbatim** into `sops/originals/<id>.md`. Resolve string concatenation or templating in code so the file is the text the model actually receives. Keep placeholders (e.g. `${restaurantName}`, `{{customer_name}}`) for now.
+- Note the platform and platform id (see the table).
+- Note the tool names the agent uses (in code, or the platform's tool list), so SOP steps can reference them.
 
 **Ask now (one batch), only what you couldn't find:**
-- Where prompts live, if you couldn't find all of them, and whether any agents should be left out.
+- Where prompts live, if you couldn't find all of them, and whether any agents should be left out (e.g. test or archived agents on the platform).
 - Platform ids you couldn't find.
 - Where the sopc folder should go (default: `sops/` at the repo root).
 - Prompts assembled at runtime from data you can't see (e.g. a database): ask for an export or a sample.
