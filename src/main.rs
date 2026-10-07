@@ -200,6 +200,13 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Print every block's parsed fields as JSON (for editors and servers built on sopc)
+    #[command(
+        after_help = docs!("export"),
+        after_long_help = examples!("export", "  sopc export                     Every block in ./sops as JSON
+  sopc export -C path/to/sops     Another folder")
+    )]
+    Export,
     /// Rewrite SOPs as Markdown or YAML without changing any prompt
     #[command(
         after_help = docs!("convert"),
@@ -493,6 +500,19 @@ fn run(command: Command, dir: Option<PathBuf>) -> anyhow::Result<ExitCode> {
             }
             if json {
                 println!("{}", pretty_json(&serde_json::Value::Array(list), true));
+            }
+        }
+        Command::Export => {
+            let root = root()?;
+            match load(&root) {
+                Ok(ws) => println!("{}", pretty_json(&workspace::export(&ws), true)),
+                Err(err) => {
+                    let issues = err.downcast::<Issues>()?.0;
+                    let list = issues.iter().map(|i| i.to_json()).collect();
+                    let report = serde_json::json!({"valid": false, "issues": serde_json::Value::Array(list)});
+                    println!("{}", pretty_json(&report, true));
+                    return Ok(ExitCode::FAILURE);
+                }
             }
         }
         Command::Overlap { prompts } => print!("{}", analyze::overlap(&read_prompts(&prompts)?, 0.75).text()),

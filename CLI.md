@@ -4,7 +4,7 @@ Every command and flag. `sopc --help` (or `sopc <command> --help`) prints the sa
 
 - [Install and uninstall](#install-and-uninstall)
 - [How every command works](#how-every-command-works)
-- Commands: [`sopc`](#sopc) · [`validate`](#sopc-validate) · [`lint`](#sopc-lint) · [`fmt`](#sopc-fmt) · [`plan`](#sopc-plan) · [`affected`](#sopc-affected) · [`agents`](#sopc-agents) · [`convert`](#sopc-convert) · [`overlap`](#sopc-overlap) · [`compare`](#sopc-compare) · [`skills`](#sopc-skills) · [`guide`](#sopc-guide)
+- Commands: [`sopc`](#sopc) · [`validate`](#sopc-validate) · [`lint`](#sopc-lint) · [`fmt`](#sopc-fmt) · [`plan`](#sopc-plan) · [`affected`](#sopc-affected) · [`agents`](#sopc-agents) · [`export`](#sopc-export) · [`convert`](#sopc-convert) · [`overlap`](#sopc-overlap) · [`compare`](#sopc-compare) · [`skills`](#sopc-skills) · [`guide`](#sopc-guide)
 
 ## Install and uninstall
 
@@ -172,6 +172,19 @@ sopc agents --json   # adds bases, tools and prompt hashes
 | Flag | Effect |
 |---|---|
 | `--json` | Machine-readable output |
+
+## sopc export
+
+Prints every block as JSON, as sopc read it: for tools built on sopc, such as an editor or a server that shows the files as forms, so they don't need their own parser.
+
+```sh
+sopc export
+sopc export -C path/to/sops
+```
+
+The output is `{"config", "bases", "sops", "agents"}`. `config` holds `sopc.yaml`'s `variables`, `sops_heading` and `sop_order`, with defaults filled in. Each base, SOP and agent is the canonical JSON its `lock.json` hash is taken over (the fields in [FORMAT.md](FORMAT.md), with defaults filled in; a step written as plain text stays a string), plus `file`, its path in the folder. Agents also get `platform` and `platform_id`, and every platform field (`livekit`, `vapi`, `elevenlabs`, `retell`), `null` when unset. Variables keep their order in the file.
+
+Only parsing matters here: a file that can't be read prints `{"valid": false, "issues": [...]}`, as `sopc validate --json` does, and exits 1, but references between files (an unknown base, a missing variable) are left to `sopc validate`.
 
 ## sopc convert
 

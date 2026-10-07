@@ -338,6 +338,35 @@ fn check_steps(map: &Mapping, path: &str, issues: &mut Vec<Issue>) -> bool {
     issues.len() == before
 }
 
+// --- export ------------------------------------------------------------------------------------
+
+/// Every block's parsed fields, for `sopc export`: each block's canonical JSON (the fields its
+/// lock.json hash is taken over) plus the file it was read from, and sopc.yaml's settings.
+pub fn export(ws: &Workspace) -> serde_json::Value {
+    fn with_file(canonical: String, file: String) -> serde_json::Value {
+        let mut v: serde_json::Value = serde_json::from_str(&canonical).expect("canonical JSON parses");
+        v.as_object_mut().unwrap().insert("file".into(), file.into());
+        v
+    }
+    let vars: serde_json::Map<String, serde_json::Value> =
+        ws.config.variables.0.iter().map(|(k, v)| (k.clone(), v.clone().into())).collect();
+    let agents = ws.agents.iter().map(|a| {
+        let mut v = with_file(a.canonical_json(), agent_path(&a.id));
+        let obj = v.as_object_mut().unwrap();
+        // canonical_json leaves retell out when unset (to keep old hashes); export always has it.
+        obj.entry("retell").or_insert(serde_json::Value::Null);
+        obj.insert("platform".into(), a.platform().into());
+        obj.insert("platform_id".into(), a.platform_id().into());
+        v
+    });
+    serde_json::json!({
+        "config": {"variables": vars, "sops_heading": ws.config.sops_heading, "sop_order": ws.config.sop_order},
+        "bases": ws.bases.iter().map(|b| with_file(b.canonical_json(), base_path(&b.id))).collect::<Vec<_>>(),
+        "sops": ws.sops.iter().map(|s| with_file(s.canonical_json(), s.file.clone())).collect::<Vec<_>>(),
+        "agents": agents.collect::<Vec<_>>(),
+    })
+}
+
 // --- whole-workspace checks ----------------------------------------------------------------------
 
 /// Whether a base or SOP applies to the agent through its own `agents:` field.

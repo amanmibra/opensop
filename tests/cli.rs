@@ -627,15 +627,61 @@ fn argument_errors_exit_2() {
 }
 
 #[test]
+fn export_prints_every_block_as_json() {
+    let (_dir, root) = repo();
+    let out: serde_json::Value = serde_json::from_str(&run(0, &["export", "--dir", &root]).stdout).unwrap();
+    assert_eq!(out["config"]["sop_order"], serde_json::json!(["allergen-check"]));
+    assert_eq!(out["config"]["sops_heading"], "## Procedures");
+    assert_eq!(out["config"]["variables"]["staff_transfer"], "the manager on duty");
+    let base = out["bases"].as_array().unwrap().iter().find(|b| b["id"] == "brand-voice").unwrap();
+    assert_eq!(base["file"], "bases/brand-voice.md");
+    assert_eq!(base["agents"], "*");
+    assert_eq!(base["locked"], true);
+    assert_eq!(base["position"], "top");
+    let sop = out["sops"].as_array().unwrap().iter().find(|s| s["id"] == "allergen-check").unwrap();
+    assert_eq!(sop["file"], "procedures/allergen-check.yaml");
+    assert_eq!(sop["procedureSteps"][0], "Ask if anyone in the order has a food allergy");
+    assert_eq!(
+        sop["procedureSteps"][2],
+        serde_json::json!({"text": "Check each item the customer ordered against {{menu_allergen_link}}", "tool": "lookup_allergens", "required": true})
+    );
+    let agent = out["agents"].as_array().unwrap().iter().find(|a| a["id"] == "sakura-sushi").unwrap();
+    assert_eq!(agent["platform"], "livekit");
+    assert_eq!(agent["platform_id"], "sakura-sushi");
+    assert_eq!(agent["retell"], serde_json::Value::Null);
+    assert_eq!(agent["exclude"], serde_json::json!(["delivery-handling"]));
+    let vars: Vec<&String> = agent["variables"].as_object().unwrap().keys().collect();
+    assert_eq!(vars, ["restaurant_name", "menu_allergen_link", "staff_transfer"]); // in file order
+
+    // Markdown SOPs read into the same fields.
+    run(0, &["convert", "--to", "md", "allergen-check", "--dir", &root]);
+    let md: serde_json::Value = serde_json::from_str(&run(0, &["export", "--dir", &root]).stdout).unwrap();
+    let md_sop = md["sops"].as_array().unwrap().iter().find(|s| s["id"] == "allergen-check").unwrap();
+    assert_eq!(md_sop["file"], "procedures/allergen-check.md");
+    assert_eq!(md_sop["procedureSteps"], sop["procedureSteps"]);
+
+    // Files that don't parse: the issues, as validate --json prints them, and exit 1.
+    std::fs::write(Path::new(&root).join("agents/broken.yaml"), "livekit: [").unwrap();
+    let out: serde_json::Value = serde_json::from_str(&run(1, &["export", "--dir", &root]).stdout).unwrap();
+    assert_eq!(out["valid"], false);
+    assert_eq!(out["issues"][0]["path"], "agents/broken.yaml");
+    // Only parsing matters: a reference to a missing base is validate's business.
+    std::fs::remove_file(Path::new(&root).join("agents/broken.yaml")).unwrap();
+    edit(&Path::new(&root).join("agents/tonys-pizza.yaml"), "inherits: [pizza-context]", "inherits: [nope]");
+    run(0, &["export", "--dir", &root]);
+}
+
+#[test]
 fn help_has_examples_and_docs_links() {
     let docs = "https://github.com/amanmibra/sopc/blob/main/CLI.md";
     let out = run(0, &["--help"]);
     assert!(out.stdout.contains("Examples:\n  sopc "), "{}", out.stdout);
     assert!(out.stdout.ends_with(&format!("Docs: {docs}\nIssues: https://github.com/amanmibra/sopc/issues\n")));
     assert!(!run(0, &["-h"]).stdout.contains("Examples:"));
-    for cmd in
-        ["validate", "lint", "fmt", "plan", "affected", "agents", "convert", "overlap", "compare", "skills", "guide"]
-    {
+    for cmd in [
+        "validate", "lint", "fmt", "plan", "affected", "agents", "export", "convert", "overlap", "compare", "skills",
+        "guide",
+    ] {
         let link = format!("Docs: {docs}#sopc-{cmd}\n");
         let long = run(0, &[cmd, "--help"]).stdout;
         assert!(long.contains(&format!("Examples:\n  sopc {cmd}")) && long.ends_with(&link), "{cmd}: {long}");
