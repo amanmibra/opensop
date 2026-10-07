@@ -28,7 +28,7 @@ on:
 
 env:
   SOPC_ROOT: "" # your sopc folder; blank = sops/ (or the repo root if sopc.yaml is there)
-  SOPC_VERSION: v0.0.9 # a sopc release tag
+  SOPC_VERSION: v0.0.10 # a sopc release tag
 
 jobs:
   detect:
@@ -49,10 +49,9 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/amanmibra/sopc/main/install.sh | SOPC_REF="$SOPC_VERSION" sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      # Optional: fail first on duplicated or conflicting instructions (needs a sopc release
-      # with `lint --strict`, after v0.0.9).
-      # - name: Lint
-      #   run: sopc lint ${SOPC_ROOT:+--dir "$SOPC_ROOT"} --strict
+      # Fail first on duplicated or conflicting instructions. Delete this step to allow them.
+      - name: Lint
+        run: sopc lint ${SOPC_ROOT:+--dir "$SOPC_ROOT"} --strict
 
       - name: Work out which agents to test
         id: agents
