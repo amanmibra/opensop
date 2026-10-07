@@ -4,7 +4,7 @@ Every command and flag. `sopc --help` (or `sopc <command> --help`) prints the sa
 
 - [Install and uninstall](#install-and-uninstall)
 - [How every command works](#how-every-command-works)
-- Commands: [`sopc`](#sopc) · [`validate`](#sopc-validate) · [`lint`](#sopc-lint) · [`fmt`](#sopc-fmt) · [`plan`](#sopc-plan) · [`affected`](#sopc-affected) · [`agents`](#sopc-agents) · [`export`](#sopc-export) · [`convert`](#sopc-convert) · [`overlap`](#sopc-overlap) · [`compare`](#sopc-compare) · [`skills`](#sopc-skills) · [`guide`](#sopc-guide)
+- Commands: [`sopc`](#sopc) · [`validate`](#sopc-validate) · [`lint`](#sopc-lint) · [`fmt`](#sopc-fmt) · [`plan`](#sopc-plan) · [`affected`](#sopc-affected) · [`verify`](#sopc-verify) · [`agents`](#sopc-agents) · [`export`](#sopc-export) · [`convert`](#sopc-convert) · [`overlap`](#sopc-overlap) · [`compare`](#sopc-compare) · [`skills`](#sopc-skills) · [`guide`](#sopc-guide)
 
 ## Install and uninstall
 
@@ -34,7 +34,7 @@ To uninstall, delete the binary: `rm ~/.local/bin/sopc`. If you installed the im
 | Code | Meaning |
 |---|---|
 | `0` | Success. `sopc lint` exits 0 even when it finds something, because its findings are advisory. |
-| `1` | Failure: invalid files, a build that's out of date (`--check`), a failed `compare`, files left unformatted to keep comments, or a git or file error. |
+| `1` | Failure: invalid files, a build that's out of date (`--check`), a failed `compare`, a live prompt that drifted or couldn't be read (`verify`), files left unformatted to keep comments, or a git or file error. |
 | `2` | Usage error: an unknown command or flag, a typo (sopc suggests the closest command), or a compile-only flag used with a command. |
 
 A closed pipe (`sopc guide | head`) exits 0.
@@ -159,6 +159,58 @@ sopc affected --ci --all-if-none
 | `--ci` | Also write GitHub Actions outputs (`ids`, `platform_ids`, `matrix`, `count`, `all`) and a step summary |
 
 If no default branch can be found, `affected` selects every agent and prints a warning, unless `--agents` or `--all-if-none` was given.
+
+## sopc verify
+
+Checks that what runs in production is what's in git: fetches each agent's live prompt from its platform and compares it with the compiled one. Catches hotfixes made in a platform's dashboard, which the next deploy would silently revert. Run it nightly in CI; see the [drift check example](examples/drift-check).
+
+```sh
+sopc verify                 # every agent
+sopc verify tonys-pizza     # only these agents
+sopc verify --json          # for CI
+```
+
+```console
+$ sopc verify
+Verifying 4 agent(s) against their platforms
+luigis-trattoria         elevenlabs  agent_7a1f...                in sync
+sakura-sushi             vapi        3f0c2d9e-...                 drifted
+tonys-pizza              livekit     tonys-pizza                  skipped: LiveKit: your code loads the prompt; nothing to fetch
+pasta-bar                retell      agent_51c9...                error: RETELL_API_KEY is not set (needed to read Retell agents)
+
+--- compiled/sakura-sushi.prompt.md
++++ live/vapi:3f0c2d9e-...
+-Sakura is an omakase and sushi counter in Manhattan. Reservations strongly recommended. No delivery.
++Sakura is an omakase and sushi counter in Manhattan. Closed for a private event tonight. No delivery.
+
+1 in sync, 1 drifted, 1 skipped, 1 error
+```
+
+| Argument or flag | Effect |
+|---|---|
+| `IDS` | Agents to verify: sopc ids, platform ids or `platform:id` (default: every agent) |
+| `--json` | Prints `{"ok", "summary", "agents": [{"id", "platform", "platform_id", "platform_ref", "status", "reason", "diff"}]}` instead |
+
+The prompt is compiled from the current files in memory; `build/` isn't read. Live and compiled prompts must match exactly, except for line endings and whitespace at the very end. A drifted agent shows a diff from the compiled prompt (`-`) to the live one (`+`).
+
+| Status | Meaning | Fails |
+|---|---|---|
+| `in sync` | The live prompt is the compiled one | |
+| `drifted` | They differ; the diff is shown | yes |
+| `not comparable` | The agent's prompt is split across nodes (an ElevenLabs workflow with subagent nodes, a Retell LLM with state prompts, a Retell conversation flow) or lives in a custom LLM server | |
+| `skipped` | LiveKit agents: the prompt is loaded by your code, so there's nothing to fetch | |
+| `error` | A key isn't set, the platform refused it, the agent wasn't found, or the platform couldn't be reached | yes |
+
+Exits 1 if any agent drifted or had an error. Only GET requests are sent; sopc never changes anything on a platform. Requests time out after 20 seconds.
+
+| Variable | Used for |
+|---|---|
+| `ELEVENLABS_API_KEY` | ElevenLabs agents: `GET /v1/convai/agents/{id}`, prompt at `conversation_config.agent.prompt.prompt` |
+| `VAPI_API_KEY` | Vapi assistants: `GET /assistant/{id}`, the `system` message in `model.messages` |
+| `RETELL_API_KEY` | Retell agents: `GET /get-agent/{id}`, then `GET /get-retell-llm/{llm_id}` (the version the agent uses), `general_prompt` |
+| `SOPC_ELEVENLABS_URL`, `SOPC_VAPI_URL`, `SOPC_RETELL_URL` | Another base URL for a platform's API, e.g. a proxy or a mock in tests (default: `https://api.elevenlabs.io`, `https://api.vapi.ai`, `https://api.retellai.com`) |
+
+A key only needs read access. Retell returns an agent's latest version, which may be a draft that isn't published yet.
 
 ## sopc agents
 

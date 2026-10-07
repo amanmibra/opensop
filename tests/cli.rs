@@ -679,8 +679,8 @@ fn help_has_examples_and_docs_links() {
     assert!(out.stdout.ends_with(&format!("Docs: {docs}\nIssues: https://github.com/amanmibra/sopc/issues\n")));
     assert!(!run(0, &["-h"]).stdout.contains("Examples:"));
     for cmd in [
-        "validate", "lint", "fmt", "plan", "affected", "agents", "export", "convert", "overlap", "compare", "skills",
-        "guide",
+        "validate", "lint", "fmt", "plan", "affected", "agents", "export", "convert", "overlap", "compare", "verify",
+        "skills", "guide",
     ] {
         let link = format!("Docs: {docs}#sopc-{cmd}\n");
         let long = run(0, &[cmd, "--help"]).stdout;
