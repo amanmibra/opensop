@@ -304,6 +304,17 @@ fn validate_reports_errors() {
     let out = run(1, &["validate", "--dir", &root]);
     assert!(out.stderr.contains("agents/tonys-pizza.yaml: error [unknown_base]"), "{}", out.stderr);
     assert_eq!(out.stdout, "1 error(s), 0 warning(s)\n");
+    let out = run(1, &["validate", "--dir", &root, "--json"]);
+    let report: serde_json::Value = serde_json::from_str(&out.stdout).unwrap();
+    assert_eq!(report["valid"], false);
+    assert_eq!(report["issues"][0]["code"], "unknown_base");
+    assert_eq!(report["issues"][0]["path"], "agents/tonys-pizza.yaml");
+    // Files that don't parse are reported the same way.
+    std::fs::write(Path::new(&root).join("agents/broken.yaml"), "livekit: [").unwrap();
+    let report: serde_json::Value =
+        serde_json::from_str(&run(1, &["validate", "--dir", &root, "--json"]).stdout).unwrap();
+    assert!(report["issues"].as_array().unwrap().iter().any(|i| i["path"] == "agents/broken.yaml"), "{report}");
+    std::fs::remove_file(Path::new(&root).join("agents/broken.yaml")).unwrap();
     // Paths are printed from the current folder, for validate and the commands that load files.
     for args in [&["validate"][..], &["agents"], &[]] {
         let out = sopc_in(dir.path(), args, &[]);

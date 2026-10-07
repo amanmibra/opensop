@@ -107,9 +107,14 @@ enum Command {
     #[command(
         after_help = docs!("validate"),
         after_long_help = examples!("validate", "  sopc validate                  Find errors in ./sops
-  sopc validate -C path/to/sops  Find errors in another folder")
+  sopc validate -C path/to/sops  Find errors in another folder
+  sopc validate --json           Every problem as JSON on stdout (paths from the sopc folder)")
     )]
-    Validate,
+    Validate {
+        /// Machine-readable output: {"valid": bool, "issues": [{code, message, path, severity}]}
+        #[arg(long)]
+        json: bool,
+    },
     /// Find duplicated text and conflicting instructions in each agent's prompt
     #[command(
         after_help = docs!("lint"),
@@ -397,8 +402,24 @@ fn compile(dir: Option<PathBuf>, out: Option<PathBuf>, check: bool, force: bool)
 fn run(command: Command, dir: Option<PathBuf>) -> anyhow::Result<ExitCode> {
     let root = || resolve_root(dir.clone(), Path::new("."));
     match command {
-        Command::Validate => {
+        Command::Validate { json } => {
             let root = root()?;
+            if json {
+                let issues = match load(&root) {
+                    Ok(ws) => workspace::validate(&ws),
+                    Err(err) => match err.downcast::<Issues>() {
+                        Ok(issues) => issues.0,
+                        Err(err) => return Err(err),
+                    },
+                };
+                let valid = issues.iter().all(|i| i.warning);
+                let list = issues.iter().map(|i| i.to_json()).collect();
+                println!(
+                    "{}",
+                    pretty_json(&serde_json::json!({"valid": valid, "issues": serde_json::Value::Array(list)}), true)
+                );
+                return Ok(if valid { ExitCode::SUCCESS } else { ExitCode::FAILURE });
+            }
             let issues = workspace::validate(&load(&root)?);
             for issue in &issues {
                 eprintln!("{}", issue.seen_from_cwd(&root));

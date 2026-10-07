@@ -24,6 +24,10 @@ impl Issue {
     pub fn warning(code: &'static str, path: &str, message: impl Into<String>) -> Self {
         Issue { warning: true, ..Issue::error(code, path, message) }
     }
+    pub fn to_json(&self) -> serde_json::Value {
+        let severity = if self.warning { "warning" } else { "error" };
+        serde_json::json!({"code": self.code, "message": self.message, "path": self.path, "severity": severity})
+    }
     /// The issue with its path from the current folder instead of from `root` (see [`user_path`]).
     pub fn seen_from_cwd(&self, root: &Path) -> Self {
         let path = if self.path.is_empty() { String::new() } else { user_path(root, &self.path) };

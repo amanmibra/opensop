@@ -69,7 +69,12 @@ Finds errors in the files and prints every problem with its file, line (for Mark
 
 ```sh
 sopc validate
+sopc validate --json
 ```
+
+| Flag | Effect |
+|---|---|
+| `--json` | Prints `{"valid": bool, "issues": [{"code", "message", "path", "severity"}]}` to stdout instead, including files that fail to parse. Paths are relative to the sopc folder. |
 
 The error codes are listed in [FORMAT.md](FORMAT.md#validation).
 
