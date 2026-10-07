@@ -56,7 +56,7 @@ class Case:
 
 @dataclass
 class Built:
-    """One agent's built prompt, from `sopc <root> --out <dir>` and `sopc agents --json`."""
+    """One agent's built prompt, from `sopc --dir <root> --out <dir>` and `sopc agents --json`."""
 
     prompt: str
     tools: list[str]
