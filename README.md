@@ -100,6 +100,8 @@ See the [LiveKit example](examples/livekit-restaurant) for a complete agent.
 
 ## How it works
 
+<p align="center"><img src="docs/images/blocks.png" alt="Shared instructions, procedures and groups are written once as blocks; each agent lists the blocks it uses in order, after its own context; sopc compiles one full prompt per agent for LiveKit, Vapi, ElevenLabs or Retell" width="860"></p>
+
 Prompts are compiled from blocks, and each agent lists the blocks it uses:
 
 | | File | Holds |
