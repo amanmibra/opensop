@@ -192,8 +192,8 @@ fn check(http: &ureq::Agent, build: &Build, id: &str) -> Check {
         diff: None,
     };
     let live = match platform {
-        "elevenlabs" => fetch_elevenlabs(http, platform_id),
-        "vapi" => fetch_vapi(http, platform_id),
+        "elevenlabs" => fetch_elevenlabs(http, platform_id).map(|live| (live, None)),
+        "vapi" => fetch_vapi(http, platform_id).map(|live| (live, None)),
         "retell" => fetch_retell(http, platform_id),
         _ => {
             check.status = Status::Skipped;
@@ -203,11 +203,12 @@ fn check(http: &ureq::Agent, build: &Build, id: &str) -> Check {
     };
     match live {
         Err(e) => check.reason = Some(e),
-        Ok(Live::NotComparable(why)) => {
+        Ok((Live::NotComparable(why), note)) => {
             check.status = Status::NotComparable;
-            check.reason = Some(why);
+            check.reason = Some(note.map_or(why.clone(), |note| format!("{why}; {note}")));
         }
-        Ok(Live::Prompt(live)) => {
+        Ok((Live::Prompt(live), note)) => {
+            check.reason = note;
             let (compiled, live) = (normalize(&r.prompt), normalize(&live));
             if compiled == live {
                 check.status = Status::InSync;
@@ -280,8 +281,42 @@ fn fetch_vapi(http: &ureq::Agent, id: &str) -> Result<Live, String> {
     Ok(vapi_prompt(&assistant))
 }
 
-fn fetch_retell(http: &ureq::Agent, id: &str) -> Result<Live, String> {
-    let agent = get(http, &RETELL, &format!("/get-agent/{}", segment(id)), "Authorization", "Bearer ")?;
+/// Retell keeps every version of an agent; `get-agent` without a version returns the newest,
+/// which may be a draft. Read the newest published version instead (Retell's
+/// `latest_published`), or the newest draft, with a note, when nothing is published. The note
+/// is returned beside the prompt.
+fn fetch_retell(http: &ureq::Agent, id: &str) -> Result<(Live, Option<String>), String> {
+    let (path, note) = match retell_published_version(http, id)? {
+        Some(v) => (format!("/get-agent/{}?version={v}", segment(id)), None),
+        None => (format!("/get-agent/{}", segment(id)), Some(RETELL_UNPUBLISHED.to_string())),
+    };
+    let agent = get(http, &RETELL, &path, "Authorization", "Bearer ")?;
+    Ok((retell_agent_prompt(http, &agent)?, note))
+}
+
+const RETELL_UNPUBLISHED: &str = "not published on Retell; compared the latest draft";
+
+/// The newest published version of a Retell agent, from its version list (newest first).
+fn retell_published_version(http: &ureq::Agent, id: &str) -> Result<Option<u64>, String> {
+    let mut page = String::new();
+    loop {
+        let path = format!("/list-agent-versions/{}?limit=1000&sort_order=descending{page}", segment(id));
+        let list = get(http, &RETELL, &path, "Authorization", "Bearer ")?;
+        let published = list["items"].as_array().into_iter().flatten().filter(|v| v["is_published"] == true);
+        if let Some(version) = published.filter_map(|v| v["version"].as_u64()).max() {
+            return Ok(Some(version));
+        }
+        let key = list["pagination_key"].as_str().filter(|k| !k.is_empty() && list["has_more"] == true);
+        // Stop at the last page, or at a page that points to itself.
+        let Some(next) = key.map(|k| format!("&pagination_key={}", segment(k))).filter(|n| *n != page) else {
+            return Ok(None);
+        };
+        page = next;
+    }
+}
+
+/// The prompt of the LLM a Retell agent version uses.
+fn retell_agent_prompt(http: &ureq::Agent, agent: &Json) -> Result<Live, String> {
     let engine = &agent["response_engine"];
     match engine["type"].as_str().unwrap_or_default() {
         "retell-llm" => {}

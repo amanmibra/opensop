@@ -101,7 +101,7 @@ fn copy_dir(src: &Path, dst: &Path) {
 }
 
 /// Agents added to the fixture's three LiveKit ones: (sopc id, platform line).
-const AGENTS: [(&str, &str); 7] = [
+const AGENTS: [(&str, &str); 8] = [
     ("el-sync", "elevenlabs: el_sync"),
     ("el-flow", "elevenlabs: el_flow"),
     ("vapi-drift", "vapi: asst_drift"),
@@ -109,6 +109,7 @@ const AGENTS: [(&str, &str); 7] = [
     ("retell-sync", "retell: agent_sync"),
     ("retell-states", "retell: agent_states"),
     ("retell-flow", "retell: agent_flow"),
+    ("retell-draft", "retell: agent_draft"),
 ];
 
 /// The fixture with an agent per case, and each agent's compiled prompt.
@@ -142,6 +143,8 @@ fn routes(prompts: &BTreeMap<String, String>) -> BTreeMap<String, (u16, Json)> {
         "edges": {}
     });
     let retell_agent = |engine: Json| json!({"agent_id": "x", "response_engine": engine});
+    let versions = |items: Json| json!({"items": items, "has_more": false});
+    let llm = |prompt: &str| json!({"general_prompt": prompt, "states": []});
     let entries = [
         ("/v1/convai/agents/el_sync", 200, el(&crlf, json!({"nodes": {}, "edges": {}}))),
         ("/v1/convai/agents/el_flow", 200, el("anything", flow)),
@@ -150,15 +153,67 @@ fn routes(prompts: &BTreeMap<String, String>) -> BTreeMap<String, (u16, Json)> {
             200,
             json!({"id": "asst_drift", "model": {"messages": [{"role": "system", "content": drifted}]}}),
         ),
-        ("/get-agent/agent_sync", 200, retell_agent(json!({"type": "retell-llm", "llm_id": "llm_sync", "version": 3}))),
-        ("/get-retell-llm/llm_sync?version=3", 200, json!({"general_prompt": prompts["retell-sync"], "states": []})),
-        ("/get-agent/agent_states", 200, retell_agent(json!({"type": "retell-llm", "llm_id": "llm_states"}))),
+        // Version 4 is a draft with an edited prompt; version 3 is published and serves calls.
+        (
+            "/list-agent-versions/agent_sync?limit=1000&sort_order=descending",
+            200,
+            versions(json!([
+                {"version": 4, "is_published": false}, {"version": 3, "is_published": true},
+                {"version": 2, "is_published": true}
+            ])),
+        ),
+        ("/get-agent/agent_sync", 200, retell_agent(json!({"type": "retell-llm", "llm_id": "llm_sync", "version": 4}))),
+        (
+            "/get-agent/agent_sync?version=4",
+            200,
+            retell_agent(json!({"type": "retell-llm", "llm_id": "llm_sync", "version": 4})),
+        ),
+        ("/get-retell-llm/llm_sync?version=4", 200, llm("A draft nobody has published yet.")),
+        (
+            "/get-agent/agent_sync?version=3",
+            200,
+            retell_agent(json!({"type": "retell-llm", "llm_id": "llm_sync", "version": 3})),
+        ),
+        ("/get-retell-llm/llm_sync?version=3", 200, llm(&prompts["retell-sync"])),
+        // The published version is on the second page.
+        (
+            "/list-agent-versions/agent_states?limit=1000&sort_order=descending",
+            200,
+            json!({"items": [{"version": 9, "is_published": false}], "has_more": true, "pagination_key": "p 2"}),
+        ),
+        (
+            "/list-agent-versions/agent_states?limit=1000&sort_order=descending&pagination_key=p%202",
+            200,
+            versions(json!([{"version": 1, "is_published": true}])),
+        ),
+        ("/get-agent/agent_states?version=1", 200, retell_agent(json!({"type": "retell-llm", "llm_id": "llm_states"}))),
         (
             "/get-retell-llm/llm_states",
             200,
             json!({"general_prompt": "x", "states": [{"name": "a", "state_prompt": "Greet."}]}),
         ),
-        ("/get-agent/agent_flow", 200, retell_agent(json!({"type": "conversation-flow", "conversation_flow_id": "f"}))),
+        (
+            "/list-agent-versions/agent_flow?limit=1000&sort_order=descending",
+            200,
+            versions(json!([{"version": 0, "is_published": true}])),
+        ),
+        (
+            "/get-agent/agent_flow?version=0",
+            200,
+            retell_agent(json!({"type": "conversation-flow", "conversation_flow_id": "f"})),
+        ),
+        // Never published: the latest draft is compared, with a note.
+        (
+            "/list-agent-versions/agent_draft?limit=1000&sort_order=descending",
+            200,
+            versions(json!([{"version": 1, "is_published": false}, {"version": 0, "is_published": false}])),
+        ),
+        (
+            "/get-agent/agent_draft",
+            200,
+            retell_agent(json!({"type": "retell-llm", "llm_id": "llm_draft", "version": 1})),
+        ),
+        ("/get-retell-llm/llm_draft?version=1", 200, llm(&prompts["retell-draft"])),
     ];
     entries.into_iter().map(|(path, status, body)| (path.to_string(), (status, body))).collect()
 }
@@ -181,11 +236,12 @@ fn verify_reports_every_agent() {
     assert!(line(&out, "el-flow").contains("not comparable: multi-node (ElevenLabs workflow with 1 node(s))"));
     assert!(line(&out, "retell-states").contains("not comparable: multi-node (Retell LLM with 1 state prompt(s))"));
     assert!(line(&out, "retell-flow").contains("not comparable: multi-node (Retell conversation flow)"));
+    assert!(line(&out, "retell-draft").ends_with("in sync: not published on Retell; compared the latest draft"));
     assert!(line(&out, "tonys-pizza").contains("skipped: LiveKit"), "{}", out.stdout);
     // The drift is shown as a diff from the compiled prompt to the live one.
     assert!(out.stdout.contains("--- compiled/vapi-drift.prompt.md\n+++ live/vapi:asst_drift\n"), "{}", out.stdout);
     assert!(out.stdout.contains("\n+Luigi's is a sit-down Italian restaurant in Queens. Takeout only tonight"));
-    assert!(out.stdout.ends_with("\n2 in sync, 1 drifted, 3 not comparable, 3 skipped, 1 error\n"), "{}", out.stdout);
+    assert!(out.stdout.ends_with("\n3 in sync, 1 drifted, 3 not comparable, 3 skipped, 1 error\n"), "{}", out.stdout);
     // Only GETs, with each platform's auth header.
     let seen = seen.lock().unwrap();
     assert!(seen.iter().all(|(req, _)| req.starts_with("GET ")), "{seen:?}");
@@ -226,7 +282,8 @@ fn verify_names_a_missing_key() {
     assert_eq!(out.code, 1);
     assert!(line(&out, "el-sync").ends_with("in sync"));
     assert!(line(&out, "retell-sync").ends_with("error: RETELL_API_KEY is not set (needed to read Retell agents)"));
-    assert!(seen.lock().unwrap().iter().all(|(r, _)| !r.contains("get-agent")), "no request without a key");
+    let seen = seen.lock().unwrap();
+    assert!(seen.iter().all(|(r, _)| r.starts_with("GET /v1/convai/")), "no Retell request without a key: {seen:?}");
 }
 
 #[test]
@@ -263,4 +320,33 @@ fn verify_reports_an_unreachable_platform() {
     let out = verify(&root, &url, &["vapi-drift"], &[]);
     assert_eq!(out.code, 1);
     assert!(line(&out, "vapi-drift").contains("error: can't reach Vapi"), "{}", out.stdout);
+}
+
+#[test]
+fn verify_reads_the_published_retell_version() {
+    let (_dir, root, prompts) = workspace();
+    let (url, seen) = mock(routes(&prompts));
+    let out = verify(&root, &url, &["retell-sync", "retell-states"], &[]);
+    assert!(line(&out, "retell-sync").ends_with("in sync"), "{}", out.stdout);
+    assert!(line(&out, "retell-states").contains("not comparable"), "{}", out.stdout);
+    let seen: Vec<String> = seen.lock().unwrap().iter().map(|(r, _)| r.clone()).collect();
+    // The draft (version 4) and the unversioned agent are never read.
+    for path in ["/get-agent/agent_sync", "/get-agent/agent_sync?version=4", "/get-retell-llm/llm_sync?version=4"] {
+        assert!(!seen.contains(&format!("GET {path}")), "{path} was read: {seen:?}");
+    }
+    assert!(seen.contains(&"GET /get-retell-llm/llm_sync?version=3".to_string()), "{seen:?}");
+    assert!(seen.contains(&"GET /get-agent/agent_states?version=1".to_string()), "{seen:?}");
+}
+
+#[test]
+fn verify_compares_an_unpublished_retell_draft_with_a_note() {
+    let (_dir, root, mut prompts) = workspace();
+    prompts.insert("retell-draft".into(), "Edited in the dashboard.".into());
+    let (url, _) = mock(routes(&prompts));
+    let out = verify(&root, &url, &["--json", "retell-draft"], &[]);
+    assert_eq!(out.code, 1);
+    let report: Json = serde_json::from_str(&out.stdout).unwrap();
+    let agent = &report["agents"][0];
+    assert_eq!(agent["status"], "drifted");
+    assert_eq!(agent["reason"], "not published on Retell; compared the latest draft");
 }

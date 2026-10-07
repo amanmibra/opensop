@@ -219,10 +219,16 @@ Exits 1 if any agent drifted or had an error. Only GET requests are sent; sopc n
 |---|---|
 | `ELEVENLABS_API_KEY` | ElevenLabs agents: `GET /v1/convai/agents/{id}`, prompt at `conversation_config.agent.prompt.prompt` |
 | `VAPI_API_KEY` | Vapi assistants: `GET /assistant/{id}`, the `system` message in `model.messages` |
-| `RETELL_API_KEY` | Retell agents: `GET /get-agent/{id}`, then `GET /get-retell-llm/{llm_id}` (the version the agent uses), `general_prompt` |
+| `RETELL_API_KEY` | Retell agents: `GET /list-agent-versions/{id}` to find the newest published version, `GET /get-agent/{id}?version=N`, then `GET /get-retell-llm/{llm_id}?version=M` (the LLM version that agent version uses), `general_prompt` |
 | `SOPC_ELEVENLABS_URL`, `SOPC_VAPI_URL`, `SOPC_RETELL_URL` | Another base URL for a platform's API, e.g. a proxy or a mock in tests (default: `https://api.elevenlabs.io`, `https://api.vapi.ai`, `https://api.retellai.com`) |
 
-A key only needs read access. Retell returns an agent's latest version, which may be a draft that isn't published yet.
+A key only needs read access.
+
+Which version is compared:
+
+- **Retell** keeps every version of an agent, and the newest one is often an unpublished draft. verify compares the newest published version (what Retell calls `latest_published`). An agent that was never published is compared by its newest draft, and the line says `not published on Retell; compared the latest draft`. A phone number can be pinned to an older version (`agent_version` in its `inbound_agents` or `outbound_agents`); calls to that number run the pinned version, which verify doesn't check.
+- **ElevenLabs** returns the agent's saved configuration; unsaved drafts are per user and aren't included. With [versioning](https://elevenlabs.io/docs/eleven-agents/operate/versioning) on, sopc reads what ElevenLabs returns when no branch is given (the main branch); a share of traffic deployed to another branch isn't checked.
+- **Vapi** has no version parameter on `GET /assistant/{id}`; it returns the current assistant. Unpublished dashboard drafts are per user and don't affect calls.
 
 ## sopc agents
 
