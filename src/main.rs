@@ -414,10 +414,7 @@ fn run(command: Command, dir: Option<PathBuf>) -> anyhow::Result<ExitCode> {
             if json {
                 let issues = match load(&root) {
                     Ok(ws) => workspace::validate(&ws),
-                    Err(err) => match err.downcast::<Issues>() {
-                        Ok(issues) => issues.0,
-                        Err(err) => return Err(err),
-                    },
+                    Err(err) => err.downcast::<Issues>()?.0,
                 };
                 let valid = issues.iter().all(|i| i.warning);
                 let list = issues.iter().map(|i| i.to_json()).collect();
