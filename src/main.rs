@@ -899,14 +899,21 @@ fn files_at_ref(root: &Path, git_ref: &str) -> anyhow::Result<BTreeMap<String, S
     let rel = rel.to_string_lossy().replace('\\', "/");
     let prefix = if rel.is_empty() { String::new() } else { format!("{rel}/") };
     let path_arg = if prefix.is_empty() { "." } else { &prefix };
-    let listing = git(&top, &["ls-tree", "-r", "--name-only", git_ref, "--", path_arg])?;
-    let mut files = BTreeMap::new();
-    for name in listing.lines() {
+    // One process lists the tree and one reads every blob, however many files there are.
+    let listing = git(&top, &["ls-tree", "-r", "-z", git_ref, "--", path_arg])?;
+    let mut wanted = vec![]; // (rel, object id)
+    for entry in listing.split('\0').filter(|e| !e.is_empty()) {
+        // <mode> SP <type> SP <object> TAB <path>
+        let Some((meta, name)) = entry.split_once('\t') else { bail!("git ls-tree: unexpected output `{entry}`") };
         let Some(rel) = name.strip_prefix(&prefix) else { continue };
         if is_source(rel) {
-            files.insert(rel.to_string(), git(&top, &["show", &format!("{git_ref}:{name}")])?);
+            let object = meta.rsplit(' ').next().unwrap_or_default();
+            wanted.push((rel.to_string(), object.to_string()));
         }
     }
+    let objects: Vec<&str> = wanted.iter().map(|(_, o)| o.as_str()).collect();
+    let texts = read_blobs(&top, &objects)?;
+    let mut files: BTreeMap<String, String> = wanted.into_iter().map(|(rel, _)| rel).zip(texts).collect();
     // A ref from before the rename: read its opensop.yaml as the config.
     if !files.contains_key(CONFIG) {
         if let Some(text) = files.remove(LEGACY_CONFIG) {
@@ -914,4 +921,45 @@ fn files_at_ref(root: &Path, git_ref: &str) -> anyhow::Result<BTreeMap<String, S
         }
     }
     Ok(files)
+}
+
+/// The contents of git objects, read by one `git cat-file --batch`, as `git show` prints them.
+fn read_blobs(cwd: &Path, objects: &[&str]) -> anyhow::Result<Vec<String>> {
+    use std::process::{Command, Stdio};
+    if objects.is_empty() {
+        return Ok(vec![]);
+    }
+    let mut child = Command::new("git")
+        .args(["cat-file", "--batch"])
+        .current_dir(cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("can't run git ({e}); --against needs git"))?;
+    let input: String = objects.iter().map(|o| format!("{o}\n")).collect();
+    let mut stdin = child.stdin.take().expect("stdin is piped");
+    // Written from another thread so a full stdout pipe can't block the write.
+    let writer = std::thread::spawn(move || stdin.write_all(input.as_bytes()));
+    let output = child.wait_with_output()?;
+    writer.join().expect("the writer doesn't panic")?;
+    if !output.status.success() {
+        bail!("git cat-file --batch: {}", String::from_utf8_lossy(&output.stderr).trim());
+    }
+    let mut out = output.stdout.as_slice();
+    let mut texts = Vec::with_capacity(objects.len());
+    for object in objects {
+        // <object> SP <type> SP <size> LF <contents> LF, or <object> SP missing LF
+        let end = out.iter().position(|b| *b == b'\n').unwrap_or(out.len());
+        let header = String::from_utf8_lossy(&out[..end]).into_owned();
+        let parsed = header.rsplit(' ').next().and_then(|s| s.parse::<usize>().ok());
+        let fits = |size: &usize| header.split(' ').count() == 3 && end + 1 + size <= out.len();
+        let Some(size) = parsed.filter(fits) else {
+            bail!("git cat-file --batch: can't read {object} ({header})");
+        };
+        let text = String::from_utf8_lossy(&out[end + 1..end + 1 + size]).into_owned();
+        texts.push(workspace::universal_newlines(text));
+        out = out.get(end + 2 + size..).unwrap_or_default();
+    }
+    Ok(texts)
 }

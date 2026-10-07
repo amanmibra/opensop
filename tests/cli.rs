@@ -284,6 +284,24 @@ fn plan_against_a_git_ref() {
 }
 
 #[test]
+fn plan_reads_every_file_at_a_ref() {
+    // CRLF text, non-UTF-8 and non-source files, and files outside the sopc folder, all at once.
+    let (dir, root) = repo();
+    let host = Path::new(&root).join("instructions/restaurant-host.md");
+    std::fs::write(&host, read(&host).replace('\n', "\r\n")).unwrap();
+    std::fs::write(Path::new(&root).join("notes ü.txt"), b"\xff\xfe binary\n").unwrap();
+    std::fs::write(dir.path().join("other.yaml"), "x: 1\n").unwrap();
+    git(dir.path(), &["init", "-q", "-b", "main"]);
+    git(dir.path(), &["-c", "core.autocrlf=false", "add", "."]);
+    git(dir.path(), &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"]);
+    let out = run(0, &["plan", "--dir", &root, "--against", "main", "--summary"]);
+    assert!(out.stdout.contains("No agent prompts change."), "{}", out.stdout);
+    edit(&host, "phone host", "host");
+    let out = run(0, &["plan", "--dir", &root, "--against", "main", "--summary"]);
+    assert!(out.stdout.contains("instruction `restaurant-host` edited"), "{}", out.stdout);
+}
+
+#[test]
 fn plan_against_a_ref_from_before_the_rename() {
     let (dir, root) = repo();
     std::fs::rename(Path::new(&root).join("sopc.yaml"), Path::new(&root).join("opensop.yaml")).unwrap();
